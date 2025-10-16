@@ -4,7 +4,9 @@ import Appointment from "../../Models/Appointment/Appointment.js";
 import DoctorSchedule from "../../Models/Doctor/ScheduleSchema.js";
 import moment from "moment";
 import Payment from "../../Models/Payments/paymentSchema .js";
-import razorpay from "../../Config/Rrazorpay.js";
+import razorpay from "../../Config/Rrazorpay.js"
+
+
 
 // ----------------- Helpers -----------------
 // ----------------- Helpers -----------------
@@ -47,7 +49,7 @@ export const createPatientAppointment = async (req, res) => {
       email,
       department,
       contactNumber,
-      paymentMethod, // "Cash", "UPI", "Card", "GPay", etc.
+      paymentMethod, // "Cash", "UPI", "Card", etc.
     } = req.body;
 
     // ------------------- CHECK DOCTOR -------------------
@@ -55,14 +57,8 @@ export const createPatientAppointment = async (req, res) => {
     if (!doctor) return res.status(404).json({ message: "Doctor not found" });
 
     // ------------------- FETCH SCHEDULE -------------------
-    const startOfDay = moment
-      .utc(appointmentDate, "YYYY-MM-DD")
-      .startOf("day")
-      .toDate();
-    const endOfDay = moment
-      .utc(appointmentDate, "YYYY-MM-DD")
-      .endOf("day")
-      .toDate();
+    const startOfDay = moment.utc(appointmentDate, "YYYY-MM-DD").startOf("day").toDate();
+    const endOfDay = moment.utc(appointmentDate, "YYYY-MM-DD").endOf("day").toDate();
 
     const doctorSchedule = await DoctorSchedule.findOne({
       doctor: doctorId,
@@ -74,19 +70,10 @@ export const createPatientAppointment = async (req, res) => {
         message: `No schedule found for this doctor on ${appointmentDate}`,
       });
     }
-    // console.log(doctorSchedule);
-    
 
     // ------------------- FIND SLOT -------------------
-    const slot = doctorSchedule.slots.find(
-      (s) => s.start === timeSlot && !s.isBooked
-    );
-    // console.log(slot);
-    
-    if (!slot)
-      return res
-        .status(400)
-        .json({ message: "Selected time slot is not available" });
+    const slot = doctorSchedule.slots.find((s) => s.start === timeSlot && !s.isBooked);
+    if (!slot) return res.status(400).json({ message: "Selected time slot is not available" });
 
     slot.isBooked = true;
     await doctorSchedule.save();
@@ -104,6 +91,7 @@ export const createPatientAppointment = async (req, res) => {
       appointmentDate: moment.utc(appointmentDate, "YYYY-MM-DD").toDate(),
       timeSlot: { start: slot.start, end: slot.end },
       consultationType,
+      videoLink: consultationType === "Online" ? null : undefined, // Leave null for online
       reason,
       status: "Pending",
     });
@@ -115,39 +103,36 @@ export const createPatientAppointment = async (req, res) => {
         ? slot.onlineFee * durationMultiplier
         : slot.offlineFee * durationMultiplier;
 
-    // ------------------- VALIDATE PAYMENT METHOD AND SET CHANNEL -------------------
+    // ------------------- VALIDATE PAYMENT METHOD -------------------
     let paymentMethodOptions = [];
     let channel = "";
-    let status = "Pending";
+    let paymentStatus = "Pending";
 
     if (consultationType === "Online") {
-      // Online payments options
       paymentMethodOptions = ["UPI", "Card", "NetBanking"];
       channel = "Online";
     } else {
-      // Offline payments options
       paymentMethodOptions = ["Cash", "Card"];
       channel = "WalkIn";
-      status = paymentMethod === "Cash" ? "Paid" : "Pending";
+      paymentStatus = paymentMethod === "Cash" ? "Paid" : "Pending";
     }
 
-    // Validate payment method
     if (!paymentMethodOptions.includes(paymentMethod)) {
       return res.status(400).json({ message: "Invalid payment method" });
     }
 
-    // Create payment object
-    let paymentData = {
+    // ------------------- CREATE PAYMENT -------------------
+    const paymentData = {
       appointment: newAppointment._id,
       patient: req.user ? req.user._id : null,
       method: paymentMethod,
       amount: fee,
-      status: status,
+      status: paymentStatus,
       type: "Initial",
-      channel: channel,
+      channel,
     };
 
-    // For online, generate Razorpay order
+    // For online payments, generate Razorpay order
     if (channel === "Online") {
       const razorpayOrder = await razorpay.orders.create({
         amount: fee * 100, // in paise
@@ -156,22 +141,23 @@ export const createPatientAppointment = async (req, res) => {
         payment_capture: 1,
       });
       paymentData.razorpayOrderId = razorpayOrder.id;
-      // status remains pending initially
+      paymentData.status = "Pending"; // Wait for payment confirmation
     }
 
     const newPayment = await Payment.create(paymentData);
 
     return res.status(201).json({
       success: true,
-      message: "Appointment booked successfully",
+      message: "Appointment booked successfully. Wait for doctor confirmation.",
       appointment: newAppointment,
       payment: newPayment,
     });
   } catch (error) {
-    console.log("createAppointment error:", error);
+    console.error("createAppointment error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 // ----------------- Cancel Appointment -----------------
 export const cancelAppointment = async (req, res) => {

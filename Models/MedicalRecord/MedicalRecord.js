@@ -12,11 +12,16 @@ const medicalRecordSchema = new mongoose.Schema(
       ref: "users",
       required: true,
     },
+    payment: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "payments", // 👈 add this line
+    },
     doctor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "doctors",
       required: true,
     },
+
     prescription: [
       {
         medicineName: { type: String, required: true },
@@ -40,9 +45,9 @@ const medicalRecordSchema = new mongoose.Schema(
     },
     bloodTests: [
       {
-        testName: { type: String },  // e.g., "HbA1c"
-        result: { type: String },    // e.g., "6.2"
-        unit: { type: String },      // e.g., "%"
+        testName: { type: String }, // e.g., "HbA1c"
+        result: { type: String }, // e.g., "6.2"
+        unit: { type: String }, // e.g., "%"
         date: { type: Date, default: Date.now },
       },
     ],

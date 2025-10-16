@@ -219,19 +219,57 @@ export const archiveMedicalRecord = async (req, res) => {
 // ➝ Patient gets all their own medical history
 export const getMyMedicalHistory = async (req, res) => {
   try {
-    if (req.user.role !== "patient") return res.status(403).json({ success: false, message: "Access denied" });
+    if (req.user.role !== "patient") {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
 
+    // Find all medical records for this patient
     const records = await MedicalRecord.find({ patient: req.user._id })
-      .populate("doctor", "fullName email specialization")
+      .populate({
+        path: "doctor",
+        select: "fullName email specialization phone experience",
+      })
+      .populate({
+        path: "appointment",
+        select: "date time department status",
+      })
+      .populate({
+        path: "payment",
+        select: "amount method status transactionId createdAt",
+      })
       .sort({ createdAt: -1 });
 
-    if (!records.length) return res.status(404).json({ success: false, message: "Record not found" });
+    if (!records.length) {
+      return res.status(404).json({ success: false, message: "No medical records found" });
+    }
 
-    res.json({ success: true, data: records });
+    // Format and enrich response
+    const formattedRecords = records.map((rec) => ({
+      id: rec._id,
+      doctor: rec.doctor,
+      checkupDate: rec.appointment?.date || rec.createdAt,
+      department: rec.appointment?.department,
+      consultationNotes: rec.consultationNotes,
+      medicalHistory: rec.medicalHistory,
+      prescription: rec.prescription,
+      payment: rec.payment
+        ? {
+            amount: rec.payment.amount,
+            method: rec.payment.method,
+            status: rec.payment.status,
+            billDate: rec.payment.createdAt,
+            transactionId: rec.payment.transactionId,
+          }
+        : null,
+    }));
+
+    res.json({ success: true, data: formattedRecords });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
 
 // ➝ Doctor gets all records for a specific patient
 export const getMedicalRecordById = async (req, res) => {

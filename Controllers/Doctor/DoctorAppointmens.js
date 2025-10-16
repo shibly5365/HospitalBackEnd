@@ -1,7 +1,7 @@
 import nodemailer from "nodemailer";
 import Appointment from "../../Models/Appointment/Appointment.js";
 import doctorModel from "../../Models/Doctor/DoctorModels.js";
-
+import { v4 as uuidv4 } from "uuid";
 import mongoose from "mongoose";
 import DoctorSchedule from "../../Models/Doctor/ScheduleSchema.js";
 import userModel from "../../Models/User/UserModels.js";
@@ -9,6 +9,7 @@ import DoctorLeave from "../../Models/LeaveRequest/LeaveSchema.js";
 import DepartmentModle from "../../Models/Departmenst/DepartmenstModels.js";
 import moment from "moment";
 import Payment from "../../Models/Payments/paymentSchema .js";
+import MedicalRecord from "../../Models/MedicalRecord/MedicalRecord.js";
 
 // ------------------------------
 // Nodemailer transporter
@@ -69,7 +70,7 @@ export const getAppointments = async (req, res) => {
 export const updateAppointmentStatus = async (req, res) => {
   try {
     const doctorId = req.user._id;
-    const { appointmentId, status, notes } = req.body;
+    const { appointmentId, status, notes, prescription, diagnosis } = req.body;
 
     const allowedStatuses = [
       "Confirmed",
@@ -100,6 +101,7 @@ export const updateAppointmentStatus = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
+    // ------------------- CONFIRMED STATUS -------------------
     if (status === "Confirmed" && !appointment.tokenNumber) {
       const dayStart = moment(appointment.appointmentDate)
         .startOf("day")
@@ -114,20 +116,47 @@ export const updateAppointmentStatus = async (req, res) => {
 
       appointment.tokenNumber = sameDayConfirmedCount + 1;
 
-      
-      // Update corresponding payment status to "Paid"
+      // Update payment status
       await Payment.findOneAndUpdate(
         { appointment: appointment._id },
         { status: "Paid" }
       );
+
+      // ------------------- ONLINE CONSULTATION LINK -------------------
+      if (appointment.consultationType === "Online" && !appointment.videoLink) {
+        // Generate unique video link (Jitsi example)
+        const videoLink = `https://meet.jit.si/${uuidv4()}`;
+        appointment.videoLink = videoLink;
+      }
+    }
+
+    // ------------------- COMPLETED STATUS -------------------
+    if (status === "Completed") {
+      // Create medical record if doctor provided prescription/diagnosis
+      if (prescription || diagnosis || notes) {
+        const medicalRecord = await MedicalRecord.create({
+          appointment: appointment._id,
+          patient: appointment.patient._id,
+          doctor: doctor._id,
+          prescription: prescription || [],
+          diagnosis: diagnosis || "",
+          notes: notes || "",
+          followUpDate: null,
+          attachments: [],
+          vitals: {},
+        });
+
+        // Link medical record to appointment
+        appointment.medicalRecord = medicalRecord._id;
+      }
     }
 
     appointment.status = status;
     if (notes) appointment.notes = notes;
     await appointment.save();
 
+    // ------------------- CANCELLED STATUS -------------------
     if (status === "Cancelled") {
-      // Free up the booked slot
       await DoctorSchedule.updateOne(
         { doctor: appointment.doctor, date: appointment.appointmentDate },
         { $set: { "slots.$[elem].isBooked": false } },
@@ -142,7 +171,7 @@ export const updateAppointmentStatus = async (req, res) => {
       );
     }
 
-    // Prepare and send email notification based on status
+    // ------------------- SEND EMAIL -------------------
     let mailSubject = "";
     let mailBody = "";
 
