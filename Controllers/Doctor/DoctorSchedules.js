@@ -35,23 +35,25 @@ export const createSchedule = async (req, res) => {
   try {
     let {
       doctorId,
-      weekDays,
-      weeksAhead = 4,
-      selectedDates,
+      weekDays,        // for weekly schedule (["Monday", "Wednesday"])
+      weeksAhead = 4,  // how many weeks ahead to create
+      selectedDates,   // for random date schedule
       workingHours,
       breaks,
     } = req.body;
 
-    // If doctor logged in, get doctorId from profile
+    // Get doctorId if the user is a doctor
     if (req.user.role === "doctor") {
       const doctor = await doctorModel.findOne({ userId: req.user._id });
       if (!doctor)
-        return res
-          .status(404)
-          .json({ success: false, message: "Doctor profile not found" });
+        return res.status(404).json({
+          success: false,
+          message: "Doctor profile not found",
+        });
       doctorId = doctor._id;
     }
 
+    // Validate required fields
     if (!doctorId || !workingHours) {
       return res.status(400).json({
         success: false,
@@ -72,13 +74,19 @@ export const createSchedule = async (req, res) => {
     const createdSchedules = [];
     const today = moment().startOf("day");
 
-    // ----------- OPTION 1: Weekdays with weeksAhead -----------
+    // 1️⃣ WEEKLY SCHEDULE (Day-based → generate actual dates)
     if (weekDays && weekDays.length) {
       for (let i = 0; i < weeksAhead; i++) {
         for (const day of weekDays) {
-          const scheduleDate = today.clone().add(i, "weeks").day(day);
-          if (scheduleDate.isBefore(today)) continue;
+          // Generate the correct date for the day in the week
+          let scheduleDate = today.clone().add(i, "weeks").day(day);
 
+          // If the generated date is before today, move to next week
+          if (scheduleDate.isBefore(today)) {
+            scheduleDate = scheduleDate.add(1, "weeks");
+          }
+
+          // Skip if already exists
           const existing = await DoctorSchedule.findOne({
             doctor: doctorId,
             date: scheduleDate.toDate(),
@@ -105,12 +113,13 @@ export const createSchedule = async (req, res) => {
       }
     }
 
-    // ----------- OPTION 2: Specific Selected Dates -----------
+    // 2️⃣ RANDOM DATE SCHEDULE (Doctor selects exact dates)
     if (selectedDates && selectedDates.length) {
       for (const dateStr of selectedDates) {
-        const scheduleDate = moment(dateStr).startOf("day");
+        const scheduleDate = moment(dateStr, "YYYY-MM-DD").startOf("day");
         if (!scheduleDate.isValid()) continue;
 
+        // Skip if already exists
         const existing = await DoctorSchedule.findOne({
           doctor: doctorId,
           date: scheduleDate.toDate(),
@@ -135,8 +144,15 @@ export const createSchedule = async (req, res) => {
         createdSchedules.push(newSchedule);
       }
     }
-    // console.log(newSchedule);
-    
+
+    // Return response
+    if (!createdSchedules.length) {
+      return res.status(200).json({
+        success: true,
+        message: "No new schedules created (dates may already exist).",
+        schedules: [],
+      });
+    }
 
     return res.status(201).json({
       success: true,
@@ -148,6 +164,7 @@ export const createSchedule = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 // ================= GET ALL SCHEDULES (ADMIN) =================
 export const getDoctorSchedules = async (req, res) => {
