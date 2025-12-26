@@ -1,6 +1,5 @@
 import express from "express";
 import { AuthMiddleware } from "../../Middleware/AuthMiddleware.js";
-import { Login, Logout } from "../../Controllers/Auth/AuthControllers.js";
 import {
   CreateDoctor,
   DeleteDoctors,
@@ -44,6 +43,7 @@ import { upload } from "../../Config/multer.js";
 import { archiveMedicalRecord } from "../../Controllers/patient/MedicalHhistory.js";
 import { bookAppointment } from "../../Controllers/Receptionist/CreatingAppointments.js";
 import { getConversation, sendMessage } from "../../Controllers/Messages/messages.js";
+import { Login, Logout } from "../../Controllers/Auth/Units/AuthControllers.js";
 
 const AdminRouting = express.Router();
 

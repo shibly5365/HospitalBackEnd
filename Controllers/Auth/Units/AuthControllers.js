@@ -1,8 +1,8 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import userModel from "../../Models/User/UserModels.js";
+import userModel from "../../../Models/User/UserModels.js";
 import cookie from "cookie-parser";
-import doctorModel from "../../Models/Doctor/DoctorModels.js";
+import doctorModel from "../../../Models/Doctor/DoctorModels.js";
 
 export const SignUp = async (req, res) => {
   try {

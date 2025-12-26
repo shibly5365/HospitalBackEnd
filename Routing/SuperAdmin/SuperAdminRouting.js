@@ -6,13 +6,13 @@ import {
   getAllAdmin,
   UpdatedAdmin,
 } from "../../Controllers/SuperAdmin/SuperAdminControllers.js";
-import { Login, Logout } from "../../Controllers/Auth/AuthControllers.js";
 import { upload } from "../../Config/multer.js";
 import { LoginValidation } from "../../Middleware/AuthValidaction.js";
 import {
   getConversation,
   sendMessage,
 } from "../../Controllers/Messages/messages.js";
+import { Login, Logout } from "../../Controllers/Auth/Units/AuthControllers.js";
 
 const SuperAdminRouting = express.Router();
 

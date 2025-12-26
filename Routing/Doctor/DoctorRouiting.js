@@ -1,5 +1,4 @@
 import express from "express";
-import { Login, Logout } from "../../Controllers/Auth/AuthControllers.js";
 import { LoginValidation } from "../../Middleware/AuthValidaction.js";
 import { AuthMiddleware } from "../../Middleware/AuthMiddleware.js";
 import {
@@ -34,6 +33,7 @@ import {
 import { getAvailableSlots } from "../../Controllers/patient/Appointments.js";
 import { approveLeave, createLeaveRequest, getDoctorLeaves, rejectLeave } from "../../Controllers/Doctor/LeaveRequest.js";
 import { getConversation, sendMessage } from "../../Controllers/Messages/messages.js";
+import { Login, Logout } from "../../Controllers/Auth/Units/AuthControllers.js";
 
 // import { setSchedule } from "../../Controllers/Doctor/DoctorSchedules.js"
 

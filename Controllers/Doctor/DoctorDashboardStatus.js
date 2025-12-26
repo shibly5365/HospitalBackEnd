@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 import Appointment from "../../Models/Appointment/Appointment.js";
 import doctorModel from "../../Models/Doctor/DoctorModels.js";
-import { Login } from "../Auth/AuthControllers.js";
 
 
 // 🔹 Helper: convert appointmentDate + timeSlot.start to timestamp

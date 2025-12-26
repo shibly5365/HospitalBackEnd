@@ -1,5 +1,4 @@
 import express from "express";
-import { Login, Logout, SignUp } from "../../Controllers/Auth/AuthControllers.js";
 import { LoginValidation, SignUpValidation } from "../../Middleware/AuthValidaction.js";
 import { AuthMiddleware } from "../../Middleware/AuthMiddleware.js";
 import { getReceptionistDashboard } from "../../Controllers/Receptionist/resceptonistSummery.js";
@@ -9,6 +8,7 @@ import { getDoctorAvailableDates, getDoctorSchedules } from "../../Controllers/D
 import { bookAppointment, receptionistBookAppointment } from "../../Controllers/Receptionist/CreatingAppointments.js";
 import { getAllPatients } from "../../Controllers/Admin/GetAllPatients.js";
 import { getConversation, sendMessage } from "../../Controllers/Messages/messages.js";
+import { Login, Logout, SignUp } from "../../Controllers/Auth/Units/AuthControllers.js";
 const ReceptionistRouting = express.Router();
 
 ReceptionistRouting.post(

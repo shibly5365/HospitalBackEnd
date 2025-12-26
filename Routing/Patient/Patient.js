@@ -1,6 +1,5 @@
 import express from "express";
 
-import { Login, Logout, SignUp } from "../../Controllers/Auth/AuthControllers.js";
 import { LoginValidation, SignUpValidation } from "../../Middleware/AuthValidaction.js";
 import { AuthMiddleware } from "../../Middleware/AuthMiddleware.js";
 
@@ -21,6 +20,7 @@ import { getAllDoctors, getDoctorsByDepartment } from "../../Controllers/Admin/D
 import { getDepartmentById, getDepartments } from "../../Controllers/Admin/Departmenst.js";
 import { getMyMedicalHistory, getMyMedicalHistoryByDoctor } from "../../Controllers/patient/MedicalHhistory.js";
 import { getConversation, sendMessage } from "../../Controllers/Messages/messages.js";
+import { Login, Logout, SignUp } from "../../Controllers/Auth/Units/AuthControllers.js";
 
 const PatientRouting = express.Router();
 

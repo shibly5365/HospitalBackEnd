@@ -1,7 +1,7 @@
 import express from "express";
 import { LoginValidation } from "../../Middleware/AuthValidaction.js";
-import { Login, Logout } from "../../Controllers/Auth/AuthControllers.js";
 import { ForgetPassword, ResetPassword } from "../../Controllers/Auth/ForgetPassword.js";
+import { Login, Logout } from "../../Controllers/Auth/Units/AuthControllers.js";
 
 const routing = express.Router();
 
