@@ -1,26 +1,51 @@
 import express from "express";
 
-import { LoginValidation, SignUpValidation } from "../../Middleware/AuthValidaction.js";
+import {
+  LoginValidation,
+  SignUpValidation,
+} from "../../Middleware/AuthValidaction.js";
 import { AuthMiddleware } from "../../Middleware/AuthMiddleware.js";
+import { validateAppointment } from "../../Middleware/Appointment/AppointmetnVallidetion.js";
 
 import {
-  createPatientAppointment,
-  cancelAppointment,
-  getMyAppointments,
-  rescheduleAppointment,
+  Login,
+  Logout,
+  SignUp,
+} from "../../Controllers/Auth/Units/AuthControllers.js";
+import {
+  deleteAppointment,
   getAppointmentById,
-  getAvailableSlots,
-  deletePatientAppointment,
+  getTodayPatientAppointments,
+  patientCancelAppointment,
+  patientCreateAppointment,
+  patientGetMyAppointments,
+  updateAppointment,
 } from "../../Controllers/patient/Appointments.js";
-import { validateAppointment } from "../../Middleware/Appointment/appointmetnVallidetion.js";
-
+import {
+  generateVideoCallRoom,
+  getVideoCallStatus,
+  endVideoCall,
+} from "../../Controllers/patient/VideoCall.js";
 import { getPatientDashboardSummary } from "../../Controllers/patient/PatientDashboardSummary.js";
-import { getDoctorAvailableDates, getDoctorSchedules, getSchedulesByDoctorId } from "../../Controllers/Doctor/DoctorSchedules.js";
-import { getAllDoctors, getDoctorsByDepartment } from "../../Controllers/Admin/DoctorsControllers.js";
+import {
+  patientDeleteMedicalRecord,
+  patientGetAllMedicalRecords,
+  patientGetMedicalRecordById,
+  patientGetConsultationsByDoctor,
+} from "../../Controllers/patient/MedicalHhistory.js";
+import { patientGetMyPayments } from "../../Controllers/patient/Payments.js";
+import {
+  patientGetProfile,
+  patientUpdateProfile,
+} from "../../Controllers/patient/Profile.js";
+import {
+  patientGetAllPrescriptions,
+  patientGetPrescriptionById,
+} from "../../Controllers/patient/Prescriptions.js";
+import { getAllDoctors, getDoctorById, getDoctorsByDepartment } from "../../Controllers/Admin/DoctorsControllers.js";
+import { getDoctorAvailableDates, getDoctorAvailableSlots } from "../../Controllers/Receptionist/doctorAvailable.js";
 import { getDepartmentById, getDepartments } from "../../Controllers/Admin/Departmenst.js";
-import { getMyMedicalHistory, getMyMedicalHistoryByDoctor } from "../../Controllers/patient/MedicalHhistory.js";
 import { getConversation, sendMessage } from "../../Controllers/Messages/messages.js";
-import { Login, Logout, SignUp } from "../../Controllers/Auth/Units/AuthControllers.js";
 
 const PatientRouting = express.Router();
 
@@ -29,73 +54,173 @@ PatientRouting.post("/signup", SignUpValidation, SignUp);
 PatientRouting.post("/login", LoginValidation, Login);
 PatientRouting.post("/logout", Logout);
 
-/* 🩺 Appointment Routes */
+// Appointments
 
-// Create new appointment
 PatientRouting.post(
-  "/appointments",
+  "/create",
   AuthMiddleware(["patient"]),
   validateAppointment,
-  createPatientAppointment
+  patientCreateAppointment
+);
+PatientRouting.get(
+  "/my",
+  AuthMiddleware(["patient"]),
+  patientGetMyAppointments
+);
+PatientRouting.get(
+  "/today-appointments",
+  AuthMiddleware(["patient"]),
+  getTodayPatientAppointments
+);
+PatientRouting.get("/my/:id", AuthMiddleware(["patient"]), getAppointmentById);
+
+PatientRouting.put(
+  "/reschedule/:id",
+  AuthMiddleware(["patient"]),
+  updateAppointment
+);
+PatientRouting.put(
+  "/cancel/:id",
+  AuthMiddleware(["patient"]),
+  patientCancelAppointment
+);
+PatientRouting.delete(
+  "/delete/:id",
+  AuthMiddleware(["patient"]),
+  deleteAppointment
 );
 
-// Get all my appointments
-PatientRouting.get("/getAllappointments", AuthMiddleware(["patient"]), getMyAppointments);
+// 📹 Video Call Routes
+PatientRouting.post(
+  "/video-call/:appointmentId",
+  AuthMiddleware(["patient","doctor"]),
+  generateVideoCallRoom
+);
+PatientRouting.get(
+  "/video-call-status/:appointmentId",
+  AuthMiddleware(["patient","doctor"]),
+  getVideoCallStatus
+);
+PatientRouting.put(
+  "/video-call-end/:appointmentId",
+  AuthMiddleware(["patient","doctor"]),
+  endVideoCall
+);
 
-// Get appointment by ID
-PatientRouting.get("/appointments/:id", AuthMiddleware(["patient"]), getAppointmentById);
+// Dashboard
 
-// Cancel appointment
-PatientRouting.put("/cancelappointments/:id", AuthMiddleware(["patient"]), cancelAppointment);
+PatientRouting.get(
+  "/dashboard",
+  AuthMiddleware(["patient"]),
+  getPatientDashboardSummary
+);
 
-// Reschedule appointment
-PatientRouting.put("/rescheduleappointments/:id", AuthMiddleware(["patient"]), rescheduleAppointment);
+// Medical Record
+PatientRouting.get(
+  "/medicalRecord",
+  AuthMiddleware(["patient"]),
+  patientGetAllMedicalRecords
+);
+PatientRouting.get(
+  "/medical/:id",
+  AuthMiddleware(["patient"]),
+  patientGetMedicalRecordById
+);
+PatientRouting.delete(
+  "/dlt/:id",
+  AuthMiddleware(["patient"]),
+  patientDeleteMedicalRecord
+);
 
-// Get available slots for a doctor
-PatientRouting.get("/appointments/available-slots/:id", AuthMiddleware(["patient",]), getAvailableSlots);
-// delete appointemsn
-PatientRouting.delete("/appointmentsdeletes/:id", AuthMiddleware(["patient"]), deletePatientAppointment);
+// Consultations by Doctor
+PatientRouting.get(
+  "/consultations",
+  AuthMiddleware(["patient"]),
+  patientGetConsultationsByDoctor
+);
 
-/* 📅 Doctor Schedules */
+// payment History
 
+PatientRouting.get(
+  "/payment",
+  AuthMiddleware(["patient"]),
+  patientGetMyPayments
+);
 
-// Get schedules by doctor ID (any user)
-PatientRouting.get("/scheduleDoctor/:id", AuthMiddleware(["admin", "patient", "receptionist"]), getSchedulesByDoctorId);
+// profile
+PatientRouting.get(
+  "/myProfile",
+  AuthMiddleware(["patient"]),
+  patientGetProfile
+);
+PatientRouting.put(
+  "/updatedProfile/:id",
+  AuthMiddleware(["patient"]),
+  patientUpdateProfile
+);
 
-// Get available dates for a doctor
-PatientRouting.get("/schedules/available-dates/:id", AuthMiddleware(["patient","admin","receptionist"]), getDoctorAvailableDates);
+// priescriiption
 
-/* 📊 Dashboard */
-PatientRouting.get("/dashboard-summary", AuthMiddleware(["patient"]), getPatientDashboardSummary);
+PatientRouting.get(
+  "/priesc",
+  AuthMiddleware(["patient"]),
+  patientGetAllPrescriptions
+);
+PatientRouting.get(
+  "/pries/:id",
+  AuthMiddleware(["patient"]),
+  patientGetPrescriptionById
+);
 
-/* 🏥 Doctors */
+// getDoctors
+PatientRouting.get(
+  "/getAll-Doctor",
+  AuthMiddleware(["admin", "receptionist", "patient"]),
+  getAllDoctors
+);
+PatientRouting.get(
+  "/getAll-Doctor/:id",
+  AuthMiddleware(["admin", "receptionist", "patient"]),
+  getDoctorById
+);
+PatientRouting.get(
+  "/getalldoctorDepartments/:id",
+  AuthMiddleware(["admin", "receptionist", "patient"]),
+  getDoctorsByDepartment
+);
+PatientRouting.get(
+  "/doctor/:id/available-dates",
+  AuthMiddleware(["receptionist","patient"]),
+  getDoctorAvailableDates
+);
+PatientRouting.get(
+  "/doctor/:doctorId/slots",
+  AuthMiddleware(["receptionist","patient"]),
+  getDoctorAvailableSlots
+);
 
-// Get all doctors
-PatientRouting.get("/doctors", AuthMiddleware(["admin", "receptionist", "patient"]), getAllDoctors);
+// Departments
 
-// Get doctors by department
-PatientRouting.get("/getalldoctorDepartments/:id", AuthMiddleware(["admin", "receptionist", "patient"]), getDoctorsByDepartment);
+PatientRouting.get(
+  "/getdepartmenst",
+  AuthMiddleware(["admin", "receptionist", "patient"]),
+  getDepartments
+);
+PatientRouting.get(
+  "/getdepartmenst/:id",
+  AuthMiddleware(["admin", "receptionist", "patient"]),
+  getDepartmentById
+);
 
-// Get all departments
-PatientRouting.get("/getdepartmenst", AuthMiddleware(["admin", "receptionist", "patient"]), getDepartments);
-PatientRouting.get("/getdepartmenst/id", AuthMiddleware(["admin", "receptionist", "patient"]), getDepartmentById);
-
-/* 📖 Medical History */
-
-// Get my medical history
-PatientRouting.get("/history/me", AuthMiddleware(["patient"]), getMyMedicalHistory);
-
-// Get my medical history by doctor
-PatientRouting.get("/history/me/doctor/:doctorId", AuthMiddleware(["patient"]), getMyMedicalHistoryByDoctor);
-
-
-
-// Send a message
-// All roles can send, but permission checked in controller
-PatientRouting.post("/send", AuthMiddleware(["superAdmin","admin","doctor","receptionist","patient"]), sendMessage);
-
-// Get conversation with another user
-PatientRouting.get("/conversation/:userId", AuthMiddleware(["superAdmin","admin","doctor","receptionist","patient"]), getConversation);
-
-
+// Messgae
+PatientRouting.post(
+  "/sendMessage",
+  AuthMiddleware(["patient"]),
+  sendMessage
+);
+PatientRouting.get(
+  "/getMessage",
+  AuthMiddleware(["patient"]),
+  getConversation
+);
 export default PatientRouting;
