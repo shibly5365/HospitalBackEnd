@@ -7,29 +7,36 @@ const medicalRecordSchema = new mongoose.Schema(
       ref: "appointment",
       required: true,
     },
+
     patient: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "users",
       required: true,
     },
+
     payment: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "payments", // 👈 add this line
+      ref: "payments",
     },
+
     doctor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "doctors",
       required: true,
     },
 
-    prescription: [
-      {
-        medicineName: { type: String, required: true },
-        dosage: { type: String },
-        frequency: { type: String },
-        duration: { type: String },
-      },
-    ],
+    // 🩺 Clinical Info
+    chiefComplaint: String,
+    symptoms: String,
+    diagnosis: [{ type: String }],
+
+    // ✨ Single Prescription Connected Here
+    prescription: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "prescription",
+    },
+
+    // 📌 Patient Vitals
     vitals: {
       bloodPressure: String,
       heartRate: String,
@@ -42,19 +49,50 @@ const medicalRecordSchema = new mongoose.Schema(
       },
       bloodSugar: String,
       hemoglobin: String,
+      spo2: String,
+      glucose: String,
+      respiratoryRate: String,
     },
-    bloodTests: [
+
+    // 🧪 Lab / Blood Tests
+    labTests: [
       {
-        testName: { type: String }, // e.g., "HbA1c"
-        result: { type: String }, // e.g., "6.2"
-        unit: { type: String }, // e.g., "%"
+        testName: String,
+        reason: String,
+      },
+    ],
+
+    labReports: [
+      {
+        reportType: String,
+        summary: String,
+        fileUrl: String,
         date: { type: Date, default: Date.now },
       },
     ],
-    notes: { type: String },
-    diagnosis: { type: String },
-    followUpDate: { type: Date },
-    attachments: [String],
+
+    bloodTests: [
+      {
+        testName: String,
+        result: String,
+        unit: String,
+        date: { type: Date, default: Date.now },
+      },
+    ],
+
+    // 📄 Doctor Notes / Follow-ups
+    notes: String,
+    followUpDate: Date,
+    followUpNote: String,
+
+    // 📎 Attachments
+    attachments: [
+      {
+        fileUrl: String,
+        fileType: String,
+      },
+    ],
+
     status: {
       type: String,
       enum: ["active", "archived"],
