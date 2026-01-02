@@ -67,6 +67,22 @@ const userSchema = new mongoose.Schema(
     insuranceInfo: {
       type: String,
     },
+    bloodGroup: {
+      type: String,
+      enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
+    },
+    allergies: {
+      type: String,
+    },
+    chronicConditions: {
+      type: String,
+    },
+    height: {
+      type: Number, // in cm
+    },
+    weight: {
+      type: Number, // in kg
+    },
     isBlocked: { type: Boolean, default: false },
     // Email verification
     verifyOtp: {
