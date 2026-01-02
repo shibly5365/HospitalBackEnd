@@ -30,6 +30,7 @@ const appointmentSchema = new mongoose.Schema(
       enum: ["Pending", "Paid", "Refunded", "PartialPaid"],
       default: "Pending",
     },
+
     payments: [{ type: mongoose.Schema.Types.ObjectId, ref: "payments" }],
     status: {
       type: String,
