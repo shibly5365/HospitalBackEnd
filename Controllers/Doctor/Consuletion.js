@@ -1,10 +1,10 @@
-import Appointment from "../../Models/Appointment/Appointment";
+import Appointment from "../../Models/Appointment/Appointment.js";
 
 export const getAllConsultations = async (req, res) => {
   try {
     const consultations = await Appointment.find({ consultationType: "Online" })
       .populate("doctor", "fullName specialization email")
-      .populate("patient", "fullName age gender")
+      .populate("patient", "fullName age gender contact patientId ")
       .sort({ appointmentDate: -1 });
 
     if (!consultations.length) {
