@@ -5,6 +5,12 @@ import {
   DeleteAdmin,
   getAllAdmin,
   UpdatedAdmin,
+  getSuperAdminDashboard,
+  toggleBlockAdmin,
+  getAdminDetails,
+  getAllPayments,
+  getPaymentsByDoctor,
+  getComprehensiveAnalytics,
 } from "../../Controllers/SuperAdmin/SuperAdminControllers.js";
 import { upload } from "../../Config/multer.js";
 import { LoginValidation } from "../../Middleware/AuthValidaction.js";
@@ -18,6 +24,11 @@ const SuperAdminRouting = express.Router();
 
 SuperAdminRouting.post("/Superadmin", LoginValidation, Login);
 SuperAdminRouting.post("/Superadmin-logout", Logout);
+SuperAdminRouting.get(
+  "/dashboard",
+  AuthMiddleware(["superadmin"]),
+  getSuperAdminDashboard
+);
 SuperAdminRouting.post(
   "/create-admin",
   AuthMiddleware(["superadmin"]),
@@ -38,6 +49,31 @@ SuperAdminRouting.delete(
   "/delete-admin/:id",
   AuthMiddleware(["superadmin"]),
   DeleteAdmin
+);
+SuperAdminRouting.put(
+  "/toggle-block-admin/:id",
+  AuthMiddleware(["superadmin"]),
+  toggleBlockAdmin
+);
+SuperAdminRouting.get(
+  "/admin-details/:id",
+  AuthMiddleware(["superadmin"]),
+  getAdminDetails
+);
+SuperAdminRouting.get(
+  "/payments",
+  AuthMiddleware(["superadmin"]),
+  getAllPayments
+);
+SuperAdminRouting.get(
+  "/payments/doctor/:doctorId",
+  AuthMiddleware(["superadmin"]),
+  getPaymentsByDoctor
+);
+SuperAdminRouting.get(
+  "/analytics",
+  AuthMiddleware(["superadmin"]),
+  getComprehensiveAnalytics
 );
 
 // Send a message
