@@ -1,41 +1,59 @@
 import express from "express";
 import { LoginValidation } from "../../Middleware/AuthValidaction.js";
 import { AuthMiddleware } from "../../Middleware/AuthMiddleware.js";
+import { Login, Logout } from "../../Controllers/Auth/Units/AuthControllers.js";
 import {
-  getDashboardSummary,
-  getTodaysSchedule,
-} from "../../Controllers/Doctor/DoctorDashboardStatus.js";
-import {
-  createAppointmentByDoctor,
-  getAppointments,
-  getDoctorAvailability,
-  setNextAppointment,
+  createNextVisitAppointment,
+  endConsultation,
+  getAllAppointments,
+  getAppointmentById,
+  getTodaysAppointments,
+  getTodaysNextAppointment,
+  rescheduleByDoctor,
+  startConsultation,
   updateAppointmentStatus,
 } from "../../Controllers/Doctor/DoctorAppointmens.js";
-import { getRecentActivity } from "../../Controllers/Doctor/getRecentActivity.js";
-import { addPatient, getDoctorAllPatients } from "../../Controllers/Doctor/getAllPatients.js";
+import {
+  generateVideoCallRoom,
+  getVideoCallStatus,
+  endVideoCall,
+} from "../../Controllers/patient/VideoCall.js";
 import {
   createSchedule,
   deleteSchedule,
-  getDoctorAvailableDates,
   getDoctorSchedules,
-  getSchedulesByDoctorId,
   updateSchedule,
 } from "../../Controllers/Doctor/DoctorSchedules.js";
 import {
-  archiveMedicalRecord,
+  getDoctorAppointmentHistory,
+  getDoctorAppointments,
+} from "../../Controllers/patient/Appointments.js";
+import {
+  getAllConsultations,
+  getConsultationById,
+} from "../../Controllers/Doctor/Consuletion.js";
+import {
+  createPrescription,
+  deletePrescription,
+  doctorGetAllPrescriptions,
+  doctorGetPrescriptionById,
+  updatePrescription,
+} from "../../Controllers/Doctor/Prescription.js";
+import {
   createMedicalRecord,
-  getDoctorQueue,
-  getMedicalRecordById,
-  startConsultation,
+  deleteMedicalRecord,
+  doctorGetAllMedicalRecords,
+  doctorGetMedicalRecordById,
   updateMedicalRecord,
-} from "../../Controllers/patient/MedicalHhistory.js";
-import { getAvailableSlots } from "../../Controllers/patient/Appointments.js";
-import { approveLeave, createLeaveRequest, getDoctorLeaves, rejectLeave } from "../../Controllers/Doctor/LeaveRequest.js";
-import { getConversation, sendMessage } from "../../Controllers/Messages/messages.js";
-import { Login, Logout } from "../../Controllers/Auth/Units/AuthControllers.js";
+} from "../../Controllers/Doctor/MedicalRecord.js";
+import {
+  getDoctorAllPatients,
+  getPatientById,
+} from "../../Controllers/Doctor/getAllPatients.js";
+import { getDashboardSummary } from "../../Controllers/Doctor/DoctorDashboardStatus.js";
+import { createLeaveRequest } from "../../Controllers/Doctor/LeaveRequest.js";
 
-// import { setSchedule } from "../../Controllers/Doctor/DoctorSchedules.js"
+// import { expression } from "joi";
 
 const DoctorRouting = express.Router();
 
@@ -43,74 +61,164 @@ const DoctorRouting = express.Router();
 DoctorRouting.post("/login", LoginValidation, Login);
 DoctorRouting.post("/logout", AuthMiddleware(["doctor"]), Logout);
 
-// ================= APPOINTMENTS =================
-DoctorRouting.get("/appointments", AuthMiddleware(["doctor"]), getAppointments);
-DoctorRouting.put("/appointments/status", AuthMiddleware(["doctor"]), updateAppointmentStatus);
-DoctorRouting.post("/appointments/next", AuthMiddleware(["doctor"]), setNextAppointment);
-DoctorRouting.post("/doctor/create-appointment",AuthMiddleware(["doctor"]), createAppointmentByDoctor)
+
+// Dashboard 
+DoctorRouting.get("/summary",AuthMiddleware(["doctor"]),getDashboardSummary)
 
 
-// ================= LEAVE =================
-DoctorRouting.post("/leave",AuthMiddleware(["doctor"]),createLeaveRequest)
-DoctorRouting.get("/getleave/:doctorId",AuthMiddleware(["doctor"]),getDoctorLeaves)
-DoctorRouting.put("/aproveleave",AuthMiddleware(["doctor"]),approveLeave)
-DoctorRouting.put("/rejectleave",AuthMiddleware(["doctor"]),rejectLeave)
-
-// ================= DASHBOARD =================
-DoctorRouting.get("/dashboard/summary", AuthMiddleware(["doctor"]), getDashboardSummary);
-DoctorRouting.get("/dashboard/today-schedule", AuthMiddleware(["doctor"]), getTodaysSchedule);
-DoctorRouting.get("/dashboard/recent-activity", AuthMiddleware(["doctor"]), getRecentActivity);
-
-
-// ================= PATIENTS =================
-DoctorRouting.post("/createPatintes", AuthMiddleware(["doctor"]), addPatient)
-DoctorRouting.get("/allPatients", AuthMiddleware(["doctor"]), getDoctorAllPatients)
-
-
-// ================= DOCTOR SCHEDULE =================
-// Create schedule (doctor or admin)
-DoctorRouting.post("/schedule", AuthMiddleware(["doctor", "admin"]), createSchedule);
-
-// Get all schedules (admin or query by doctorId)
-DoctorRouting.get("/getschedule", AuthMiddleware(["doctor", "admin"]), getDoctorSchedules);
-
-// Get schedules by doctor ID (any user)
-DoctorRouting.get("/schedule/:id", AuthMiddleware(["admin", "patient", "receptionist","doctor"]), getSchedulesByDoctorId);
-
-// Update schedule by ID (admin only)
-DoctorRouting.put("/schedule/update/:scheduleId", AuthMiddleware(["admin","doctor"]), updateSchedule);
-
-// Get doctor available dates (patient)
-DoctorRouting.get("/schedule/available/:id", AuthMiddleware(["patient", "doctor"]), getDoctorAvailableDates);
-// DoctorRouting.get("/appointments/available-slots", AuthMiddleware(["patient","doctor"]), getAvailableSlots);
+// Appointment
+DoctorRouting.get(
+  "/allAppointment",
+  AuthMiddleware(["doctor"]),
+  getAllAppointments
+);
+DoctorRouting.get(
+  "/todyaAppointmen",
+  AuthMiddleware(["doctor"]),
+  getTodaysAppointments
+);
+DoctorRouting.get(
+  "/history",
+  AuthMiddleware(["doctor"]),
+  getDoctorAppointmentHistory
+);
+DoctorRouting.post(
+  "/createNextappoint",
+  AuthMiddleware(["doctor"]),
+  createNextVisitAppointment
+);
 
 
-DoctorRouting.delete("/schedule/delete/:id",AuthMiddleware(["admin","doctor"]),deleteSchedule)
+DoctorRouting.get("/nextAppointment",AuthMiddleware(["doctor"]),getTodaysNextAppointment)
+
+DoctorRouting.get("/app/:id", AuthMiddleware(["doctor"]), getAppointmentById);
+DoctorRouting.put(
+  "/statusAppo",
+  AuthMiddleware(["doctor"]),
+  updateAppointmentStatus
+);
+DoctorRouting.put(
+  "/reschedule",
+  AuthMiddleware(["doctor"]),
+  rescheduleByDoctor
+);
+
+// Doctor Schedule
+DoctorRouting.post(
+  "/createSchedule",
+  AuthMiddleware(["doctor"]),
+  createSchedule
+);
+DoctorRouting.get(
+  "/getSchedule",
+  AuthMiddleware(["doctor"]),
+  getDoctorSchedules
+);
+DoctorRouting.put(
+  "/updateSchedule",
+  AuthMiddleware(["doctor"]),
+  updateSchedule
+);
+DoctorRouting.delete(
+  "/deleteSchedule/:id",
+  AuthMiddleware(["doctor"]),
+  deleteSchedule
+);
+
+// Consuletion
+
+DoctorRouting.post("/start", AuthMiddleware(["doctor"]), startConsultation);
+DoctorRouting.post("/end", AuthMiddleware(["doctor"]), endConsultation);
+DoctorRouting.get("/getall", AuthMiddleware(["doctor"]), getAllConsultations);
+DoctorRouting.get("/get/:id", AuthMiddleware(["doctor"]), getConsultationById);
+
+// Creating Priscripton
+
+DoctorRouting.post(
+  "/creatingPres",
+  AuthMiddleware(["doctor"]),
+  createPrescription
+);
+DoctorRouting.get(
+  "/getPres",
+  AuthMiddleware(["doctor"]),
+  doctorGetAllPrescriptions
+);
+DoctorRouting.get(
+  "/getPres/:id",
+  AuthMiddleware(["doctor"]),
+  doctorGetPrescriptionById
+);
+DoctorRouting.put(
+  "/updatedPres/:id",
+  AuthMiddleware(["doctor"]),
+  updatePrescription
+);
+DoctorRouting.delete(
+  "/deletePres",
+  AuthMiddleware(["doctor"]),
+  deletePrescription
+);
+
+// Medical Record
+DoctorRouting.post(
+  "/medi-Creating",
+  AuthMiddleware(["doctor"]),
+  createMedicalRecord
+);
+DoctorRouting.get(
+  "/medi-get",
+  AuthMiddleware(["doctor"]),
+  doctorGetAllMedicalRecords
+);
+DoctorRouting.get(
+  "/medi-get/:id",
+  AuthMiddleware(["doctor"]),
+  doctorGetMedicalRecordById
+);
+DoctorRouting.put(
+  "/medi-update",
+  AuthMiddleware(["doctor"]),
+  updateMedicalRecord
+);
+DoctorRouting.delete(
+  "/medi-delete",
+  AuthMiddleware(["doctor"]),
+  deleteMedicalRecord
+);
+
+// Patients
+
+DoctorRouting.get(
+  "/getallPatients",
+  AuthMiddleware(["doctor"]),
+  getDoctorAllPatients
+);
+DoctorRouting.get(
+  "/allPatients/:id",
+  AuthMiddleware(["doctor"]),
+  getPatientById
+);
 
 
-// ================= MEDICAL RECORD =================
-DoctorRouting.post("/createRecords", AuthMiddleware(["doctor"]), createMedicalRecord);
-DoctorRouting.get("/history/patient/:id", AuthMiddleware(["doctor"]), getMedicalRecordById);
-DoctorRouting.put("/updatedRecords/:id", AuthMiddleware(["doctor"]), updateMedicalRecord);
-DoctorRouting.delete("/deleteRecord/:id", AuthMiddleware(["doctor", "admin"]), archiveMedicalRecord);
+// Leave Requests
+DoctorRouting.post("/leave-request", AuthMiddleware(["doctor"]), createLeaveRequest);
 
-
-// ================= CONSULTATION =================
-DoctorRouting.get("/consultation", AuthMiddleware(["doctor"]), getDoctorQueue);
-DoctorRouting.post("/consultation/start/:appointmentId", AuthMiddleware(["doctor"]), startConsultation);
-
-
-
-// Availability
-DoctorRouting.get("/availability",AuthMiddleware(["doctor"]), getDoctorAvailability);
-
-
-// Send a message
-// All roles can send, but permission checked in controller
-DoctorRouting.post("/send", AuthMiddleware(["superAdmin","admin","doctor","receptionist","patient"]), sendMessage);
-
-// Get conversation with another user
-DoctorRouting.get("/conversation/:userId", AuthMiddleware(["superAdmin","admin","doctor","receptionist","patient"]), getConversation);
-
+// 📹 Video Call Routes (doctor)
+DoctorRouting.post(
+  "/video-call/:appointmentId",
+  AuthMiddleware(["doctor"]),
+  generateVideoCallRoom
+);
+DoctorRouting.get(
+  "/video-call-status/:appointmentId",
+  AuthMiddleware(["doctor"]),
+  getVideoCallStatus
+);
+DoctorRouting.put(
+  "/video-call-end/:appointmentId",
+  AuthMiddleware(["doctor"]),
+  endVideoCall
+);
 
 export default DoctorRouting;

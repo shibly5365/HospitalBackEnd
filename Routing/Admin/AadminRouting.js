@@ -4,8 +4,9 @@ import {
   CreateDoctor,
   DeleteDoctors,
   getAllDoctors,
+  getDoctorById,
   getDoctorsByDepartment,
-  UpdatedAdmin,
+  updateDoctor,
 } from "../../Controllers/Admin/DoctorsControllers.js";
 import {
   CreateReceptionists,
@@ -15,16 +16,7 @@ import {
   UpdateReceptionist,
 } from "../../Controllers/Admin/StaffControllers.js";
 import { LoginValidation } from "../../Middleware/AuthValidaction.js";
-import {
-  cancelAppointment,
-  deleteAppointment,
-  getAllAppointmentsDetails,
-} from "../../Controllers/Admin/AllAppointmentsDetails.js";
-import {
-  deletePatient,
-  getAllPatients,
-  getPatientById,
-} from "../../Controllers/Admin/GetAllPatients.js";
+
 import {
   createDepartment,
   deleteDepartment,
@@ -33,17 +25,19 @@ import {
   updateDepartment,
   updateDepartmentImage,
 } from "../../Controllers/Admin/Departmenst.js";
-import {
-  createSchedule,
-  getDoctorAvailableDates,
-  updateSchedule,
-} from "../../Controllers/Doctor/DoctorSchedules.js";
-import { uploadToCloudinary } from "../../Units/uploadToCloudinary.js";
+
 import { upload } from "../../Config/multer.js";
-import { archiveMedicalRecord } from "../../Controllers/patient/MedicalHhistory.js";
-import { bookAppointment } from "../../Controllers/Receptionist/CreatingAppointments.js";
-import { getConversation, sendMessage } from "../../Controllers/Messages/messages.js";
+import {
+  getConversation,
+  sendMessage,
+} from "../../Controllers/Messages/messages.js";
 import { Login, Logout } from "../../Controllers/Auth/Units/AuthControllers.js";
+import {
+  deletePatient,
+  getAllPatients,
+  getPatientById,
+  togglePatientStatus,
+} from "../../Controllers/Admin/GetAllPatients.js";
 
 const AdminRouting = express.Router();
 
@@ -69,28 +63,27 @@ AdminRouting.get(
   getAllDoctors
 );
 AdminRouting.get(
+  "/getAll-Doctor/:id",
+  AuthMiddleware(["admin", "receptionist", "patient"]),
+  getDoctorById
+);
+AdminRouting.get(
   "/getalldoctorDepartments/:id",
   AuthMiddleware(["admin", "receptionist", "patient"]),
   getDoctorsByDepartment
 );
-AdminRouting.put("/update-Doctor/:id", AuthMiddleware(["admin"]),upload.single("profileImage"), UpdatedAdmin);
-
-AdminRouting.post(
-  "/schedule",
-  AuthMiddleware(["doctor", "admin"]),
-  createSchedule
+AdminRouting.put(
+  "/update-Doctor/:id",
+  AuthMiddleware(["admin"]),
+  upload.single("profileImage"),
+  updateDoctor
 );
+
 AdminRouting.delete(
   "/delete-Doctor/:id",
   AuthMiddleware(["admin"]),
   DeleteDoctors
 );
-AdminRouting.put(
-  "/updateschedule/:id",
-  AuthMiddleware(["admin"]),
-  updateSchedule
-);
-AdminRouting.get("/schedules/available-dates/:id", AuthMiddleware(["patient","admin"]), getDoctorAvailableDates);
 
 {
   /* Receptnist */
@@ -124,18 +117,15 @@ AdminRouting.delete(
 {
   /* patients */
 }
-AdminRouting.get(
-  "/getAll-patients",
-  AuthMiddleware(["admin", "receptionist"]),
-  getAllPatients
-);
-AdminRouting.get(
-  "/getAllpatients/:id",
+AdminRouting.get("/getall-patients", AuthMiddleware(["admin"]), getAllPatients);
+AdminRouting.get("/getpatients/:id", AuthMiddleware(["admin"]), getPatientById);
+AdminRouting.put(
+  "/togel-patients/:id",
   AuthMiddleware(["admin"]),
-  getPatientById
+  togglePatientStatus
 );
 AdminRouting.delete(
-  "/deletePatients/:id",
+  "/delete-patients/:id",
   AuthMiddleware(["admin"]),
   deletePatient
 );
@@ -143,25 +133,6 @@ AdminRouting.delete(
 {
   /* Appointments */
 }
-AdminRouting.get(
-  "/allAppointments",
-  AuthMiddleware(["admin"]),
-  getAllAppointmentsDetails
-);
-AdminRouting.delete(
-  "/deleteAppointments/:id",
-  AuthMiddleware(["admin"]),
-  deleteAppointment
-);
-
-AdminRouting.put(
-  "/cancelappointments/:id",
-  AuthMiddleware(["admin"]),
-  cancelAppointment
-);
-AdminRouting.post("/book",AuthMiddleware(["receptionist","admin"]),bookAppointment)
-
-
 
 {
   /* departments */
@@ -172,38 +143,28 @@ AdminRouting.post(
   upload.single("image"),
   createDepartment
 );
-
-// 🟢 Get All Departments (Admin, Receptionist, Patient)
 AdminRouting.get(
   "/getdepartmenst",
   AuthMiddleware(["admin", "receptionist", "patient"]),
   getDepartments
 );
-
-// 🟢 Get Department by ID (Admin, Receptionist)
 AdminRouting.get(
   "/getdepartmenst/:id",
-  AuthMiddleware(["admin", "receptionist","patient"]),
+  AuthMiddleware(["admin", "receptionist", "patient"]),
   getDepartmentById
 );
-
-// 🟢 Update Department (Admin only)
 AdminRouting.put(
   "/updateddepartments/:id",
   AuthMiddleware(["admin"]),
   upload.single("image"), // allow image update
   updateDepartment
 );
-// updated image
-
 AdminRouting.put(
   "/updatedImage/:id",
   AuthMiddleware(["admin"]),
   upload.single("image"), // allow image update
   updateDepartmentImage
 );
-
-// 🟢 Delete Department (Admin only)
 AdminRouting.delete(
   "/deleteupdated/:id",
   AuthMiddleware(["admin"]),
@@ -211,21 +172,17 @@ AdminRouting.delete(
 );
 
 // Medical record
-AdminRouting.delete(
-  "/deleteRecord",
-  AuthMiddleware(["doctor", "admin"]),
-  archiveMedicalRecord
-);
-
-
-
 
 // Send a message
-// All roles can send, but permission checked in controller
-AdminRouting.post("/send", AuthMiddleware(["superAdmin","admin","doctor","receptionist","patient"]), sendMessage);
-
-// Get conversation with another user
-AdminRouting.get("/conversation/:userId", AuthMiddleware(["superAdmin","admin","doctor","receptionist","patient"]), getConversation);
-
+AdminRouting.post(
+  "/send",
+  AuthMiddleware(["superAdmin", "admin", "doctor", "receptionist", "patient"]),
+  sendMessage
+);
+AdminRouting.get(
+  "/conversation/:userId",
+  AuthMiddleware(["superAdmin", "admin", "doctor", "receptionist", "patient"]),
+  getConversation
+);
 
 export default AdminRouting;
