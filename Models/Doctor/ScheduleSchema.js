@@ -7,23 +7,62 @@ const doctorScheduleSchema = new mongoose.Schema(
       ref: "doctors",
       required: true,
     },
-    dayName: { type: String },
+
     date: { type: Date, required: true },
-    workingHours: {
-      start: { type: String, required: true },
-      end: { type: String, required: true },
+    dayName: { type: String },
+
+    isLeaveDay: {
+      type: Boolean,
+      default: false,
     },
+
+    leaveRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "doctorLeave",
+      default: null,
+    },
+
+    workingHours: {
+      start: { type: String, required: true }, // "09:00"
+      end: { type: String, required: true }, // "17:00"
+    },
+
+    workType: {
+      type: String,
+      enum: [
+        "Full Day",
+        "Half Day - Morning",
+        "Half Day - Afternoon",
+        "Custom",
+      ],
+      default: "Custom",
+    },
+
+    totalWorkingHours: { type: Number, default: 0 },
+
+    slotDuration: {
+      type: Number,
+      default: 30,
+    },
+
+    preset: {
+      type: String,
+      enum: ["morning", "afternoon", "evening", "full-day", "custom"],
+      default: "custom",
+    },
+
+    breaks: [{ start: String, end: String }],
+
     slots: [
       {
-        start: { type: String, required: true },
-        end: { type: String, required: true },
-        duration: { type: Number, default: 30 },
+        start: String,
+        end: String,
+        duration: Number,
         isBooked: { type: Boolean, default: false },
-        onlineFee: { type: Number, required: true, default: 100 },
-        offlineFee: { type: Number, required: true, default: 80 },
+        onlineFee: { type: Number, default: 100 },
+        offlineFee: { type: Number, default: 80 },
       },
     ],
-    breaks: [{ start: String, end: String }],
   },
   { timestamps: true }
 );
