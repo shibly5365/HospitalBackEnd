@@ -1,391 +1,383 @@
 import moment from "moment";
 import DoctorSchedule from "../../Models/Doctor/ScheduleSchema.js";
 import doctorModel from "../../Models/Doctor/DoctorModels.js";
+import DoctorLeave from "../../Models/LeaveRequest/LeaveSchema.js";
 
 // ================= SLOT GENERATOR =================
-function generateSlots(start, end, breaks = [], slotDuration = 30) {
+
+// slot generator
+// SLOT GENERATOR FUNCTION
+export function generateSlots(
+  start,
+  end,
+  duration = 30,
+  breaks = [],
+  onlineFee = 100,
+  offlineFee = 80
+) {
   const slots = [];
   const current = moment.utc(start, "HH:mm");
   const endTime = moment.utc(end, "HH:mm");
 
-  while (current.clone().add(slotDuration, "minutes").isSameOrBefore(endTime)) {
+  while (current.clone().add(duration, "minutes").isSameOrBefore(endTime)) {
     const slotStart = current.clone();
-    const slotEnd = current.clone().add(slotDuration, "minutes");
+    const slotEnd = current.clone().add(duration, "minutes");
 
+    // Check for break-time overlap
     const isBreak = breaks.some((b) => {
-      const breakStart = moment.utc(b.start, "HH:mm");
-      const breakEnd = moment.utc(b.end, "HH:mm");
-      return slotStart.isBefore(breakEnd) && slotEnd.isAfter(breakStart);
+      const bStart = moment.utc(b.start, "HH:mm");
+      const bEnd = moment.utc(b.end, "HH:mm");
+      return slotStart.isBefore(bEnd) && slotEnd.isAfter(bStart);
     });
 
     if (!isBreak) {
       slots.push({
         start: slotStart.format("HH:mm"),
         end: slotEnd.format("HH:mm"),
+        duration,
         isBooked: false,
+        onlineFee,
+        offlineFee,
       });
     }
-    current.add(slotDuration, "minutes");
+
+    current.add(duration, "minutes");
   }
+
   return slots;
 }
 
-// ================= CREATE SCHEDULE (WEEK OR DATE) =================
 export const createSchedule = async (req, res) => {
   try {
     let {
       doctorId,
-      weekDays,        // for weekly schedule (["Monday", "Wednesday"])
-      weeksAhead = 4,  // how many weeks ahead to create
-      selectedDates,   // for random date schedule
+      weekDays,
+      weeksAhead = 4,
+      selectedDates,
       workingHours,
-      breaks,
+      preset = "custom",
+      slotDuration = 30,
+      breaks = [],
+      onlineFee = 100,
+      offlineFee = 80,
     } = req.body;
 
-    // Get doctorId if the user is a doctor
+    // -----------------------------------
+    // Auto-bind doctor if logged in
+    // -----------------------------------
     if (req.user.role === "doctor") {
       const doctor = await doctorModel.findOne({ userId: req.user._id });
       if (!doctor)
-        return res.status(404).json({
-          success: false,
-          message: "Doctor profile not found",
-        });
+        return res
+          .status(404)
+          .json({ success: false, message: "Doctor not found" });
+
       doctorId = doctor._id;
     }
 
-    // Validate required fields
-    if (!doctorId || !workingHours) {
+    if (!doctorId)
+      return res
+        .status(400)
+        .json({ success: false, message: "doctorId required" });
+
+    // -----------------------------------
+    // Slot Presets
+    // -----------------------------------
+    const PRESETS = {
+      morning: { start: "08:00", end: "12:00" },
+      afternoon: { start: "13:00", end: "17:00" },
+      evening: { start: "17:00", end: "21:00" },
+      "full-day": { start: "09:00", end: "17:00" },
+    };
+
+    if (preset !== "custom" && PRESETS[preset]) {
+      workingHours = PRESETS[preset];
+    }
+
+    if (!workingHours || !workingHours.start || !workingHours.end) {
       return res.status(400).json({
         success: false,
-        message: "doctorId and workingHours are required",
+        message: "Working hours missing",
       });
     }
 
-    if (
-      (!weekDays || !weekDays.length) &&
-      (!selectedDates || !selectedDates.length)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Either weekDays or selectedDates must be provided",
-      });
-    }
-
-    const createdSchedules = [];
     const today = moment().startOf("day");
+    const createdSchedules = [];
 
-    // 1️⃣ WEEKLY SCHEDULE (Day-based → generate actual dates)
-    if (weekDays && weekDays.length) {
+    // SLOT BUILDER
+    const generateDoctorSlots = () =>
+      generateSlots(
+        workingHours.start,
+        workingHours.end,
+        slotDuration,
+        breaks,
+        onlineFee,
+        offlineFee
+      );
+
+    // -----------------------------------
+    // WEEKDAY RECURRING SCHEDULES
+    // -----------------------------------
+    if (weekDays?.length) {
       for (let i = 0; i < weeksAhead; i++) {
         for (const day of weekDays) {
-          // Generate the correct date for the day in the week
-          let scheduleDate = today.clone().add(i, "weeks").day(day);
+          let date = today.clone().add(i, "weeks").day(day);
 
-          // If the generated date is before today, move to next week
-          if (scheduleDate.isBefore(today)) {
-            scheduleDate = scheduleDate.add(1, "weeks");
-          }
+          if (date.isBefore(today)) date.add(1, "week");
 
-          // Skip if already exists
-          const existing = await DoctorSchedule.findOne({
+          const exists = await DoctorSchedule.findOne({
             doctor: doctorId,
-            date: scheduleDate.toDate(),
+            date: date.toDate(),
           });
-          if (existing) continue;
 
-          const slots = generateSlots(
-            workingHours.start,
-            workingHours.end,
-            breaks || []
-          );
+          if (exists) continue;
 
-          const newSchedule = await DoctorSchedule.create({
+          const slots = generateDoctorSlots();
+
+          const schedule = await DoctorSchedule.create({
             doctor: doctorId,
-            date: scheduleDate.toDate(),
-            dayName: scheduleDate.format("dddd"),
+            date: date.toDate(),
+            dayName: date.format("dddd"),
             workingHours,
+            preset,
+            slotDuration,
             breaks,
+            onlineFee,
+            offlineFee,
             slots,
           });
 
-          createdSchedules.push(newSchedule);
+          createdSchedules.push(schedule);
         }
       }
     }
 
-    // 2️⃣ RANDOM DATE SCHEDULE (Doctor selects exact dates)
-    if (selectedDates && selectedDates.length) {
-      for (const dateStr of selectedDates) {
-        const scheduleDate = moment(dateStr, "YYYY-MM-DD").startOf("day");
-        if (!scheduleDate.isValid()) continue;
+    // -----------------------------------
+    // CUSTOM DATES
+    // -----------------------------------
+    if (selectedDates?.length) {
+      for (const d of selectedDates) {
+        const date = moment(d, "YYYY-MM-DD").startOf("day");
 
-        // Skip if already exists
-        const existing = await DoctorSchedule.findOne({
+        const exists = await DoctorSchedule.findOne({
           doctor: doctorId,
-          date: scheduleDate.toDate(),
+          date: date.toDate(),
         });
-        if (existing) continue;
 
-        const slots = generateSlots(
-          workingHours.start,
-          workingHours.end,
-          breaks || []
-        );
+        if (exists) continue;
 
-        const newSchedule = await DoctorSchedule.create({
+        const slots = generateDoctorSlots();
+
+        const schedule = await DoctorSchedule.create({
           doctor: doctorId,
-          date: scheduleDate.toDate(),
-          dayName: scheduleDate.format("dddd"),
+          date: date.toDate(),
+          dayName: date.format("dddd"),
           workingHours,
+          preset,
+          slotDuration,
           breaks,
+          onlineFee,
+          offlineFee,
           slots,
         });
 
-        createdSchedules.push(newSchedule);
+        createdSchedules.push(schedule);
       }
-    }
-
-    // Return response
-    if (!createdSchedules.length) {
-      return res.status(200).json({
-        success: true,
-        message: "No new schedules created (dates may already exist).",
-        schedules: [],
-      });
     }
 
     return res.status(201).json({
       success: true,
-      message: "Schedules created successfully",
+      message: "Schedule created successfully",
       schedules: createdSchedules,
     });
-  } catch (error) {
-    console.log("createSchedule error:", error);
-    res.status(500).json({ success: false, message: error.message });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-
-// ================= GET ALL SCHEDULES (ADMIN) =================
-export const getDoctorSchedules = async (req, res) => {
+export const getAllSchedules = async (req, res) => {
   try {
-    const query = {};
+    const { doctorId } = req.query;
 
-    if (req.query.doctorId) {
-      query.doctor = req.query.doctorId;
-      query.date = { $gte: new Date() };
-    }
+    const filter = doctorId
+      ? { doctor: doctorId, date: { $gte: new Date() } }
+      : {};
 
-    const schedules = await DoctorSchedule.find(query)
-      .populate("doctor", "name specialization")
+    const schedules = await DoctorSchedule.find(filter)
+      .populate("doctor", "specialization qualification")
       .sort({ date: 1 });
 
-    if (!schedules.length)
-      return res
-        .status(404)
-        .json({ success: false, message: "No schedules found" });
-
-    res.status(200).json({ success: true, schedules });
-  } catch (error) {
-    console.error("Error fetching schedules:", error);
-    res.status(500).json({ success: false, message: error.message });
+    res.json({ success: true, schedules });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
-// ================= GET SCHEDULES BY DOCTOR ID =================
-export const getSchedulesByDoctorId = async (req, res) => {
+export const getDoctorSchedules = async (req, res) => {
+  try {
+    // Find doctor profile using the logged-in userId
+    const doctor = await doctorModel.findOne({ userId: req.user._id });
+
+    if (!doctor) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Doctor not found" });
+    }
+
+    const schedules = await DoctorSchedule.find({
+      doctor: doctor._id, // <-- FIXED
+      date: { $gte: new Date() },
+    })
+      .populate("doctor", "name specialization qualification")
+      .sort({ date: 1 });
+
+    res.json({
+      success: true,
+      count: schedules.length,
+      schedules,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+export const getDoctorScheduleById = async (req, res) => {
   try {
     const doctorId = req.params.id;
     const { date } = req.query;
 
     if (!doctorId)
-      return res
-        .status(400)
-        .json({ success: false, message: "doctorId is required" });
+      return res.status(400).json({ message: "doctorId required" });
 
-    const query = { doctor: doctorId };
+    const filter = { doctor: doctorId };
 
     if (date) {
-      const parsedDate = moment.utc(date, "YYYY-MM-DD", true);
-      if (!parsedDate.isValid()) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid date format: ${date}. Use YYYY-MM-DD.`,
-        });
-      }
-      query.date = {
-        $gte: parsedDate.startOf("day").toDate(),
-        $lte: parsedDate.endOf("day").toDate(),
+      const d = moment(date, "YYYY-MM-DD");
+      filter.date = {
+        $gte: d.startOf("day").toDate(),
+        $lte: d.endOf("day").toDate(),
       };
     }
 
-    const schedules = await DoctorSchedule.find(query)
-      .populate("doctor", "name specialization")
-      .sort({ date: 1 });
+    const schedules = await DoctorSchedule.find(filter).sort({ date: 1 });
 
-    if (!schedules.length)
-      return res.status(404).json({
-        success: false,
-        message: "No schedules found for this doctor",
-      });
-
-    res.status(200).json({ success: true, schedules });
-  } catch (error) {
-    console.error("Error fetching doctor schedules:", error);
-    res.status(500).json({ success: false, message: error.message });
+    res.json({ success: true, schedules });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
 export const updateSchedule = async (req, res) => {
   try {
     const { scheduleId } = req.params;
-    const { slots, date, workingHours, breaks } = req.body;
+    const { slots, workingHours, breaks, date } = req.body;
 
     const schedule = await DoctorSchedule.findById(scheduleId);
-    if (!schedule) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Schedule not found" });
-    }
-
-    // Update slots directly if provided
-    if (slots) {
-      schedule.slots = slots;
-    }
-
-    // Update date if provided
-    if (date) {
-      const parsedDate = moment.utc(date, "YYYY-MM-DD", true);
-      if (!parsedDate.isValid()) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid date format: ${date}. Use YYYY-MM-DD.`,
-        });
-      }
-      schedule.date = parsedDate.startOf("day").toDate();
-      schedule.dayName = parsedDate.format("dddd");
-    }
-
-    // Update workingHours if provided
-    let updatedWorkingHours = schedule.workingHours; // fallback to existing
-    if (workingHours) {
-      if (!workingHours.start || !workingHours.end) {
-        return res.status(400).json({
-          success: false,
-          message: "Both workingHours.start and workingHours.end are required",
-        });
-      }
-      updatedWorkingHours = workingHours;
-      schedule.workingHours = updatedWorkingHours;
-    }
-
-    // Update breaks if provided
-    if (breaks) {
-      schedule.breaks = breaks;
-    }
-
-    // Regenerate slots only if workingHours or breaks changed
-    if (workingHours || breaks) {
-      schedule.slots = generateSlots(
-        updatedWorkingHours.start,
-        updatedWorkingHours.end,
-        breaks || schedule.breaks
-      );
-    }
-
-    await schedule.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Schedule updated successfully",
-      schedule,
-    });
-  } catch (error) {
-    console.error("Error updating schedule:", error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// ================= GET DOCTOR AVAILABLE DATES (PATIENT) =================
-export const getDoctorAvailableDates = async (req, res) => {
-  try {
-    const doctorId = req.params.id;
-    const selectedDate = req.query.date; // patient selected date (YYYY-MM-DD)
-
-    if (!doctorId)
-      return res
-        .status(400)
-        .json({ success: false, message: "doctorId is required" });
-
-    const doctor = await doctorModel
-      .findById(doctorId)
-      .populate("userId", "-password");
-
-    if (!doctor)
-      return res
-        .status(404)
-        .json({ success: false, message: "Doctor not found" });
-
-    // Fetch all schedules of doctor
-    const schedules = await DoctorSchedule.find({ doctor: doctorId });
-
-    const today = new Date();
-    let availableSchedules = schedules.filter(
-      (schedule) =>
-        schedule.date &&
-        new Date(schedule.date) >= today &&
-        schedule.slots.some((slot) => !slot.isBooked)
-    );
-
-    // If patient selected a date -> filter only that date slots
-    if (selectedDate) {
-      availableSchedules = availableSchedules.filter(
-        (s) => new Date(s.date).toISOString().split("T")[0] === selectedDate
-      );
-    }
-
-    const dates = [
-      ...new Set(
-        availableSchedules
-          .map(
-            (schedule) => new Date(schedule.date).toISOString().split("T")[0]
-          )
-          .sort()
-      ),
-    ];
-
-    res.json({
-      success: true,
-      doctor,
-      dates,
-      schedules: availableSchedules,
-    });
-  } catch (err) {
-    console.log("Error fetching available dates:", err);
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-// ================= DELETE SCHEDULE (ADMIN ONLY) =================
-export const deleteSchedule = async (req, res) => {
-  try {
-    const scheduleId = req.params.id; // ✅ fixed
-
-    // console.log("Deleting schedule id:", scheduleId);
-
-    const schedule = await DoctorSchedule.findById(scheduleId);
-    // console.log(schedule);
 
     if (!schedule)
       return res.status(404).json({ message: "Schedule not found" });
 
-    await DoctorSchedule.findByIdAndDelete(scheduleId);
+    // Update date
+    if (date) {
+      const d = moment(date, "YYYY-MM-DD").startOf("day");
+      schedule.date = d.toDate();
+      schedule.dayName = d.format("dddd");
+    }
 
-    res
-      .status(200)
-      .json({ success: true, message: "Schedule deleted successfully" });
-  } catch (error) {
-    console.log("Error deleting schedule:", error);
-    res.status(500).json({ success: false, message: error.message });
+    // Update hours
+    if (workingHours) schedule.workingHours = workingHours;
+
+    // Update breaks
+    if (breaks) schedule.breaks = breaks;
+
+    // Update slots
+    if (workingHours || breaks) {
+      schedule.slots = generateSlots(
+        schedule.workingHours.start,
+        schedule.workingHours.end,
+        schedule.duration,
+        schedule.breaks
+      );
+    }
+
+    if (slots) schedule.slots = slots;
+
+    await schedule.save();
+
+    res.json({ success: true, schedule });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
+
+export const deleteSchedule = async (req, res) => {
+  try {
+    await DoctorSchedule.findByIdAndDelete(req.params.id);
+
+    res.json({ success: true, message: "Schedule deleted" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+export const doctorWorkingDays = async (req, res) => {
+  try {
+    const { doctorId, date, preset, customStart, customEnd, slotDuration, breaks } = req.body;
+
+    // 1. Check leave
+    const leave = await DoctorLeave.findOne({
+      doctor: doctorId,
+      startDate: { $lte: date },
+      endDate: { $gte: date },
+      status: "approved",
+    });
+
+    if (leave?.duration === "Full Day") {
+      return res.status(400).json({
+        success: false,
+        message: "Doctor is on full-day leave",
+      });
+    }
+
+    // 2. Determine working hours
+    const PRESETS = {
+      morning:  { start: "09:00", end: "12:00" },
+      afternoon: { start: "13:00", end: "17:00" },
+      evening: { start: "18:00", end: "21:00" },
+      "full-day": { start: "09:00", end: "21:00" }
+    };
+
+    let workingStart = PRESETS[preset]?.start || customStart;
+    let workingEnd   = PRESETS[preset]?.end || customEnd;
+
+    // 3. Apply half-day leave adjustments
+    if (leave?.duration === "Half Day") {
+      // Morning leave → work only afternoon
+      if (leave.type === "morning") workingStart = "13:00";
+      // Afternoon leave → work only morning
+      if (leave.type === "afternoon") workingEnd = "13:00";
+    }
+
+    // 4. Generate slots
+    const slots = generateSlots(workingStart, workingEnd, slotDuration, breaks);
+
+    // 5. Save schedule
+    const schedule = await DoctorSchedule.create({
+      doctor: doctorId,
+      date,
+      dayName: new Date(date).toLocaleDateString("en-US", { weekday: "long" }),
+      workingHours: { start: workingStart, end: workingEnd },
+      slotDuration,
+      preset,
+      breaks,
+      slots
+    });
+
+    return res.json({ success: true, schedule });
+
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
