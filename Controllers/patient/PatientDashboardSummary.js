@@ -2,15 +2,25 @@ import mongoose from "mongoose";
 import Appointment from "../../Models/Appointment/Appointment.js";
 import MedicalRecord from "../../Models/MedicalRecord/MedicalRecord.js";
 import userModel from "../../Models/User/UserModels.js";
-import Payment from "../../Models/Payments/paymentSchema .js";
+import Payment from "../../Models/Payments/paymentSchema.js";
 
-// ✅ Helper: format date & time
+// ===============================
+// Helper: Format Date & Time
+// ===============================
 const formatDateTime = (date) => {
   if (!date) return { date: null, time: null, dateTime: null };
   const d = new Date(date);
+
   return {
-    date: d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
-    time: d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+    date: d.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }),
+    time: d.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
     dateTime: d.toLocaleString("en-US", {
       year: "numeric",
       month: "short",
@@ -21,13 +31,17 @@ const formatDateTime = (date) => {
   };
 };
 
-// ✅ Main Controller
+// ===============================
+// Main Controller
+// ===============================
 export const getPatientDashboardSummary = async (req, res) => {
   try {
     const patientId = req.user.id;
-    const baseUrl = `${req.protocol}://${req.get("host")}`; // e.g. http://localhost:4002
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
 
-    // 🔹 1. Patient Info
+    // ===============================
+    // 1. Patient Info
+    // ===============================
     let patient = await userModel
       .findById(patientId)
       .select(
@@ -38,77 +52,101 @@ export const getPatientDashboardSummary = async (req, res) => {
     if (!patient)
       return res.status(404).json({ success: false, message: "Patient not found" });
 
-    // ✅ Full image URL for patient
+    // Profile Image
     patient.profileImage = patient.profileImage
       ? `${baseUrl}/uploads/patients/${patient.profileImage}`
       : `${baseUrl}/uploads/defaults/default-patient.png`;
 
-    // 🔹 Date range for today
-    const today = new Date();
-    const startOfDay = new Date(today.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+    // ===============================
+    // 2. DATE RANGE
+    // ===============================
+    const now = new Date();
 
-    // 🔹 2. Appointments
-    const [todaysAppointmentsRaw, upcomingAppointmentsRaw, pastAppointmentsRaw, canceledAppointmentsRaw] = await Promise.all([
-      Appointment.find({ patient: patientId, appointmentDate: { $gte: startOfDay, $lte: endOfDay } })
-        .populate({
-          path: "doctor",
-          populate: [
-            { path: "department", select: "name" },
-            { path: "userId", select: "fullName profileImage contact email" },
-          ],
-        })
+    const startOfDay = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0,
+      0,
+      0,
+      0
+    );
+
+    const endOfDay = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23,
+      59,
+      59,
+      999
+    );
+
+    // ===============================
+    // 3. APPOINTMENT QUERIES
+    // ===============================
+    const populateDoctor = {
+      path: "doctor",
+      populate: [
+        { path: "department", select: "name" },
+        { path: "userId", select: "fullName profileImage contact email" },
+      ],
+    };
+
+    const [
+      todaysAppointmentsRaw,
+      upcomingAppointmentsRaw,
+      pastAppointmentsRaw,
+      canceledAppointmentsRaw,
+    ] = await Promise.all([
+      // Today's appointments
+      Appointment.find({
+        patient: patientId,
+        appointmentDate: { $gte: startOfDay, $lte: endOfDay },
+      })
+        .populate(populateDoctor)
         .lean(),
 
+      // Upcoming
       Appointment.find({
         patient: patientId,
         appointmentDate: { $gt: endOfDay },
         status: { $in: ["Pending", "Confirmed"] },
       })
-        .populate({
-          path: "doctor",
-          populate: [
-            { path: "department", select: "name" },
-            { path: "userId", select: "fullName profileImage contact email" },
-          ],
-        })
+        .populate(populateDoctor)
         .sort({ appointmentDate: 1 })
         .limit(5)
         .lean(),
 
+      // Past (Only Completed)
       Appointment.find({
         patient: patientId,
         appointmentDate: { $lt: startOfDay },
-        status: { $in: ["Completed", "Confirmed"] },
+        status: "Completed",
       })
-        .populate({
-          path: "doctor",
-          populate: [
-            { path: "department", select: "name" },
-            { path: "userId", select: "fullName profileImage contact email" },
-          ],
-        })
+        .populate(populateDoctor)
         .sort({ appointmentDate: -1 })
         .limit(5)
         .lean(),
 
-      Appointment.find({ patient: patientId, status: "Cancelled" })
-        .populate({
-          path: "doctor",
-          populate: [
-            { path: "department", select: "name" },
-            { path: "userId", select: "fullName profileImage contact email" },
-          ],
-        })
+      // Canceled
+      Appointment.find({
+        patient: patientId,
+        status: "Cancelled",
+      })
+        .populate(populateDoctor)
         .sort({ appointmentDate: -1 })
         .limit(5)
         .lean(),
     ]);
 
-    // ✅ Helper: build appointment data with full doctor image URL
+    // ===============================
+    // Helper to Map Appointments
+    // ===============================
     const mapAppointments = (list) =>
       list.map((a) => {
         const dt = formatDateTime(a.appointmentDate);
+
         const doctorImage = a.doctor?.userId?.profileImage
           ? `${baseUrl}/uploads/doctors/${a.doctor.userId.profileImage}`
           : `${baseUrl}/uploads/defaults/default-doctor.png`;
@@ -119,6 +157,7 @@ export const getPatientDashboardSummary = async (req, res) => {
           time: dt.time,
           dateTime: dt.dateTime,
           status: a.status,
+          timeSlot: a.timeSlot,
           doctor: {
             id: a.doctor?._id,
             name: a.doctor?.userId?.fullName || "Unknown Doctor",
@@ -130,36 +169,52 @@ export const getPatientDashboardSummary = async (req, res) => {
         };
       });
 
-    // 🔹 Appointment stats
-    const totalAppointments = await Appointment.countDocuments({ patient: patientId });
+    // ===============================
+    // 4. Appointment Stats
+    // ===============================
+    const totalAppointments = await Appointment.countDocuments({
+      patient: patientId,
+    });
+
     const appointmentStats = await Appointment.aggregate([
       { $match: { patient: new mongoose.Types.ObjectId(patientId) } },
       { $group: { _id: "$status", count: { $sum: 1 } } },
     ]);
 
-    // 🔹 3. Medical Records & Prescriptions
+    // ===============================
+    // 5. MEDICAL RECORDS + PRESCRIPTIONS
+    // ===============================
     const allRecords = await MedicalRecord.find({ patient: patientId })
-      .populate({ path: "doctor", populate: { path: "userId", select: "fullName profileImage" } })
+      .populate({
+        path: "doctor",
+        populate: { path: "userId", select: "fullName profileImage" },
+      })
+      .populate("prescription")
       .sort({ createdAt: -1 })
       .lean();
 
-    const prescriptions = allRecords.flatMap((record) =>
-      record.prescription.map((p) => {
-        const doctorImage = record.doctor?.userId?.profileImage
-          ? `${baseUrl}/uploads/doctors/${record.doctor.userId.profileImage}`
-          : `${baseUrl}/uploads/defaults/default-doctor.png`;
+    const prescriptions = allRecords.flatMap((record) => {
+      const doctorImage = record.doctor?.userId?.profileImage
+        ? `${baseUrl}/uploads/doctors/${record.doctor.userId.profileImage}`
+        : `${baseUrl}/uploads/defaults/default-doctor.png`;
 
-        return {
-          ...p,
-          recordId: record._id,
-          doctor: record.doctor?.userId?.fullName || "Doctor",
-          doctorImage,
-          date: record.createdAt,
-        };
-      })
-    );
+      let presArray = [];
 
-    // 🔹 4. Payments
+      if (Array.isArray(record.prescription)) presArray = record.prescription;
+      else if (record.prescription) presArray = [record.prescription];
+
+      return presArray.map((p) => ({
+        ...p,
+        recordId: record._id,
+        doctor: record.doctor?.userId?.fullName || "Doctor",
+        doctorImage,
+        date: record.createdAt,
+      }));
+    });
+
+    // ===============================
+    // 6. PAYMENTS
+    // ===============================
     const payments = await Payment.find({ patient: patientId })
       .sort({ createdAt: -1 })
       .limit(10)
@@ -167,12 +222,23 @@ export const getPatientDashboardSummary = async (req, res) => {
 
     const totalPayments = await Payment.aggregate([
       { $match: { patient: new mongoose.Types.ObjectId(patientId) } },
-      { $group: { _id: null, totalAmount: { $sum: "$amount" }, count: { $sum: 1 } } },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
     ]);
 
-    // 🔹 5. Consultations / Visits
-    const completedVisits = await Appointment.find({ patient: patientId, status: "Completed" })
-      .populate({ path: "doctor", populate: { path: "userId", select: "fullName profileImage department" } })
+    // ===============================
+    // 7. COMPLETED CONSULTATIONS
+    // ===============================
+    const completedVisits = await Appointment.find({
+      patient: patientId,
+      status: "Completed",
+    })
+      .populate(populateDoctor)
       .sort({ appointmentDate: -1 })
       .lean();
 
@@ -189,7 +255,9 @@ export const getPatientDashboardSummary = async (req, res) => {
       };
     });
 
-    // 🔹 ✅ 6. Last Visited Doctors (new section)
+    // ===============================
+    // 8. LAST VISITED DOCTORS (Top 3)
+    // ===============================
     const lastVisitedDoctors = completedVisits.slice(0, 3).map((visit) => {
       const doctorImage = visit.doctor?.userId?.profileImage
         ? `${baseUrl}/uploads/doctors/${visit.doctor.userId.profileImage}`
@@ -200,14 +268,16 @@ export const getPatientDashboardSummary = async (req, res) => {
         name: visit.doctor?.userId?.fullName || "Unknown Doctor",
         department: visit.doctor?.department?.name || "General",
         reason: visit.reason || "Consultation",
-        nextAppointment: visit.nextAppointmentDate || null,
-        rating: visit.rating || 4.7, // default rating if not stored
+        nextAppointment: visit.nextAppointment || null,
+        rating: visit.rating || 4.7,
         lastVisited: visit.appointmentDate,
         profileImage: doctorImage,
       };
     });
 
-    // 🔹 7. Recent Activity
+    // ===============================
+    // 9. RECENT ACTIVITY
+    // ===============================
     let recentActivity = [
       ...todaysAppointmentsRaw.map((a) => ({
         type: "Appointment",
@@ -235,15 +305,19 @@ export const getPatientDashboardSummary = async (req, res) => {
       })),
     ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    // 🔹 Date info
+    // ===============================
+    // Date Info
+    // ===============================
     const dateInfo = {
-      fullDate: new Date().toDateString(),
-      day: new Date().getDate(),
-      month: new Date().toLocaleString("default", { month: "long" }),
-      year: new Date().getFullYear(),
+      fullDate: now.toDateString(),
+      day: now.getDate(),
+      month: now.toLocaleString("default", { month: "long" }),
+      year: now.getFullYear(),
     };
 
-    // ✅ Final Response
+    // ===============================
+    // Final Response
+    // ===============================
     return res.status(200).json({
       success: true,
       dateInfo,
@@ -267,7 +341,7 @@ export const getPatientDashboardSummary = async (req, res) => {
         list: payments,
       },
       recentActivity,
-      lastVisitedDoctors, // 👈 added new key
+      lastVisitedDoctors,
     });
   } catch (error) {
     console.error("Patient Dashboard Error:", error);
