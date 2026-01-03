@@ -16,47 +16,36 @@ const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 export const getAllAppointments = async (req, res) => {
   try {
     const doctorUserId = req.user._id;
-    const doctor = await doctorModel.findOne({ userId: doctorUserId });
+    const doctor = await doctorModel.findOne({ userId: doctorUserId }).select("_id").lean();
     if (!doctor)
-      return res
-        .status(404)
-        .json({ success: false, message: "Doctor not found" });
+      return res.status(404).json({ success: false, message: "Doctor not found" });
 
     const filter = { doctor: doctor._id };
 
     // status filter
-    if (req.query.status && req.query.status !== "All") {
-      filter.status = req.query.status;
-    } else {
-      filter.status = { $ne: "Cancelled" };
-    }
+    if (req.query.status && req.query.status !== "All") filter.status = req.query.status;
+    else filter.status = { $ne: "Cancelled" };
 
     // date range filter
     const { dateFrom, dateTo } = req.query;
     if (dateFrom || dateTo) {
-      const start = dateFrom
-        ? moment.utc(dateFrom).startOf("day").toDate()
-        : new Date(0);
-      const end = dateTo
-        ? moment.utc(dateTo).endOf("day").toDate()
-        : moment.utc().endOf("day").toDate();
-
+      const start = dateFrom ? moment.utc(dateFrom).startOf("day").toDate() : new Date(0);
+      const end = dateTo ? moment.utc(dateTo).endOf("day").toDate() : moment.utc().endOf("day").toDate();
       filter.appointmentDate = { $gte: start, $lte: end };
     }
 
-    // search by patient
+    // search by patient (use lean query and ids only)
     if (req.query.search) {
       const q = req.query.search.trim();
       const patients = await userModel.find(
-        {
-          $or: [
+        { $or: [
             { fullName: { $regex: q, $options: "i" } },
             { email: { $regex: q, $options: "i" } },
             { contact: { $regex: q, $options: "i" } },
-          ],
+          ]
         },
         { _id: 1 }
-      );
+      ).lean();
       const ids = patients.map((p) => p._id);
       filter.patient = ids.length ? { $in: ids } : { $in: [null] };
     }
@@ -65,50 +54,33 @@ export const getAllAppointments = async (req, res) => {
     const limit = Math.max(1, Math.min(100, parseInt(req.query.limit || "25", 10)));
     const skip = (page - 1) * limit;
 
-    // --- IMPORTANT: await the query so you get real documents ---
-    let appointments = await Appointment.find(filter)
-      .populate("patient", "fullName email contact gender dob age profileImage") // include dob
-      .populate({
-        path: "doctor",
-        populate: { path: "userId", select: "fullName email profileImage" },
-      })
-      .populate("payments")
-      .populate("medicalRecord")
-      .sort({ appointmentDate: 1, "timeSlot.start": 1 })
-      .skip(skip)
-      .limit(limit)
-      .exec();
+    // OPTIMIZED: selective fields + lean
+    const [appointments, total] = await Promise.all([
+      Appointment.find(filter)
+        .populate("patient", "fullName email contact gender dob age profileImage")
+        .populate({ path: "doctor", select: "userId", populate: { path: "userId", select: "fullName email profileImage" } })
+        .populate("payments", "status amount")
+        .populate("medicalRecord", "_id")
+        .select("_id patient doctor payments medicalRecord appointmentDate timeSlot status reason consultationType")
+        .sort({ appointmentDate: 1, "timeSlot.start": 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Appointment.countDocuments(filter),
+    ]);
 
-      // console.log(appointments);
-      
-    const total = await Appointment.countDocuments(filter);
-
-    // Calculate and attach age to patient in response (without changing schema)
     const finalAppointments = appointments.map((appt) => {
-      // convert to plain object so we can safely mutate
-      const a = appt.toObject ? appt.toObject() : appt;
-
-      if (a.patient && a.patient.dob) {
-        const dob = new Date(a.patient.dob);
+      if (appt.patient && appt.patient.dob) {
+        const dob = new Date(appt.patient.dob);
         const diff = Date.now() - dob.getTime();
         const ageDate = new Date(diff);
         const age = Math.abs(ageDate.getUTCFullYear() - 1970);
-        a.patient.age = age;
+        appt.patient.age = age;
       }
-      // console.log(finalAppointments);
-      
-
-      return a;
+      return appt;
     });
 
-    return res.status(200).json({
-      success: true,
-      page,
-      limit,
-      total,
-      count: finalAppointments.length,
-      appointments: finalAppointments,
-    });
+    return res.status(200).json({ success: true, page, limit, total, count: finalAppointments.length, appointments: finalAppointments });
   } catch (err) {
     console.error("getAllAppointments (doctor):", err);
     return res.status(500).json({ success: false, message: "Server error" });

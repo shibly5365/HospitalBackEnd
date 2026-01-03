@@ -3,13 +3,16 @@ import doctorModel from "../../Models/Doctor/DoctorModels.js";
 import MedicalRecord from "../../Models/MedicalRecord/MedicalRecord.js";
 import userModel from "../../Models/User/UserModels.js";
 
-// ⭐ Get all patients of the doctor
+// ⭐ Get all patients of the doctor - OPTIMIZED with pagination and aggregation
 export const getDoctorAllPatients = async (req, res) => {
   try {
     const doctorUserId = req.user._id;
+    const page = Math.max(1, parseInt(req.query.page || "1", 10));
+    const limit = Math.max(1, Math.min(50, parseInt(req.query.limit || "25", 10))); // Max 50 per page
+    const skip = (page - 1) * limit;
 
     // 1️⃣ Find doctor profile
-    const doctor = await doctorModel.findOne({ userId: doctorUserId });
+    const doctor = await doctorModel.findOne({ userId: doctorUserId }).lean();
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -17,65 +20,79 @@ export const getDoctorAllPatients = async (req, res) => {
       });
     }
 
-    // 2️⃣ Fetch all appointments for this doctor
-    const appointments = await Appointment.find({
-      doctor: doctor._id,
-    })
-      .populate(
-        "patient",
-        "fullName email contact gender dob age profileImage address"
-      )
-      .sort({ appointmentDate: -1 });
+    // 2️⃣ Use aggregation pipeline to get unique patients with their visit counts in ONE query (no N+1!)
+    const patientData = await Appointment.aggregate([
+      {
+        $match: {
+          doctor: doctor._id,
+        },
+      },
+      {
+        $group: {
+          _id: "$patient",
+          lastVisit: { $max: "$appointmentDate" },
+          totalVisits: { $sum: 1 },
+          appointments: {
+            $push: {
+              appointmentId: "$_id",
+              appointmentDate: "$appointmentDate",
+              timeSlot: "$timeSlot",
+              status: "$status",
+              reason: "$reason",
+              type: "$type",
+            },
+          },
+        },
+      }, 
+      {
+        $sort: { lastVisit: -1 },
+      },
+      {
+        $facet: {
+          metadata: [{ $count: "total" }],
+          data: [{ $skip: skip }, { $limit: limit }],
+        },
+      },
+    ]);
 
-    const patientMap = new Map();
+    const total = patientData[0]?.metadata[0]?.total || 0;
+    const appointments = patientData[0]?.data || [];
 
-    for (const a of appointments) {
-      if (!a.patient) continue;
+    // 3️⃣ Get patient details in ONE query using $in (not in loop!)
+    const patientIds = appointments.map((a) => a._id);
+    const patientDetails = await userModel
+      .find({ _id: { $in: patientIds } })
+      .select("fullName email contact gender dob age profileImage address")
+      .lean();
 
-      const uniqueKey = a.patient._id.toString();
-      if (!patientMap.has(uniqueKey)) {
-        patientMap.set(uniqueKey, {
-          id: a.patient._id,
-          fullName: a.patient.fullName,
-          email: a.patient.email,
-          gender: a.patient.gender,
-          age: a.patient.age,
-          dob: a.patient.dob,
-          phone: a.patient.contact,
-          profileImage: a.patient.profileImage,
-          address: a.patient.address || {},
+    // Create a map for O(1) lookup
+    const patientMap = new Map(patientDetails.map((p) => [p._id.toString(), p]));
 
-          totalVisits: 0,
-          lastVisit: null,
-
-          appointmentHistory: [],
-        });
-      }
-
-      const patient = patientMap.get(uniqueKey);
-      patient.appointmentHistory.push({
-        appointmentId: a._id,
-        appointmentDate: a.appointmentDate,
-        timeSlot: a.timeSlot,
-        status: a.status,
-        reason: a.reason,
-        type: a.type,
-        address: a.address || {},
-      });
-
-      patient.totalVisits++;
-      if (
-        !patient.lastVisit ||
-        new Date(a.appointmentDate) > new Date(patient.lastVisit)
-      ) {
-        patient.lastVisit = a.appointmentDate;
-      }
-    }
-    const patients = Array.from(patientMap.values());
+    // 4️⃣ Merge appointment data with patient details
+    const patients = appointments.map((apptData) => {
+      const patient = patientMap.get(apptData._id.toString());
+      return {
+        id: apptData._id,
+        fullName: patient?.fullName || "Unknown",
+        email: patient?.email || "",
+        gender: patient?.gender || "",
+        age: patient?.age || "",
+        dob: patient?.dob || null,
+        phone: patient?.contact || "",
+        profileImage: patient?.profileImage || "",
+        address: patient?.address || {},
+        totalVisits: apptData.totalVisits,
+        lastVisit: apptData.lastVisit,
+        appointmentHistory: apptData.appointments,
+      };
+    });
 
     res.status(200).json({
       success: true,
       message: "Doctor all unique patients fetched",
+      page,
+      limit,
+      total,
       totalPatients: patients.length,
       patients,
     });
@@ -154,9 +171,6 @@ export const getPatientById = async (req, res) => {
       }
     }
 
-    // -------------------------------------------------------
-    // 3️⃣ FETCH UPDATED APPOINTMENTS
-    // -------------------------------------------------------
     const appointments = await Appointment.find({
       doctor: doctor._id,
       patient: patientId,
@@ -168,18 +182,10 @@ export const getPatientById = async (req, res) => {
 
     const lastVisit = appointments[0] || null;
     const nextFollowUp = medicalRecords.find((m) => m.followUpDate) || null;
-
-    // -------------------------------------------------------
-    // 4️⃣ DOCTOR NOTES
-    // -------------------------------------------------------
     const doctorNotes = medicalRecords.map((record) => ({
       note: record.notes || "",
       createdAt: record.createdAt,
     }));
-
-    // -------------------------------------------------------
-    // 5️⃣ TREATMENT HISTORY
-    // -------------------------------------------------------
     const treatmentHistory = medicalRecords.map((record) => ({
       id: record._id,
       date: record.createdAt,
@@ -205,10 +211,6 @@ export const getPatientById = async (req, res) => {
 
       appointmentId: record.appointment?._id,
     }));
-
-    // -------------------------------------------------------
-    // 6️⃣ FINANCIAL HISTORY
-    // -------------------------------------------------------
     const financialHistory = medicalRecords.map((record) => ({
       id: record.payment?._id,
       date: record.createdAt,
@@ -221,10 +223,6 @@ export const getPatientById = async (req, res) => {
       (sum, item) => sum + (item.amount || 0),
       0
     );
-
-    // -------------------------------------------------------
-    // 7️⃣ VISIT HISTORY
-    // -------------------------------------------------------
     const visitHistory = appointments.map((a) => ({
       appointmentId: a._id,
       date: a.appointmentDate,
@@ -240,10 +238,6 @@ export const getPatientById = async (req, res) => {
         status: a.payment?.status || "Not Paid",
       },
     }));
-
-    // -------------------------------------------------------
-    // 8️⃣ FINAL RESPONSE
-    // -------------------------------------------------------
     res.status(200).json({
       success: true,
       message: "Patient full overview loaded successfully",
@@ -300,3 +294,87 @@ export const getPatientById = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+export const createPatientByDoctor = async (req, res) => {
+  try {
+    const doctorUserId = req.user._id;
+    const doctor = await doctorModel.findOne({ userId: doctorUserId });
+    if (!doctor) {
+      return res.status(403).json({
+        success: false,
+        message: "Only doctors can create patients",
+      });
+    }
+    const {
+      fullName,
+      email,
+      contact,
+      dob,
+      age,
+      gender,
+      patientType,
+      address,
+      emergencyContact,
+      chronicConditions,
+    } = req.body;
+    if (!fullName || !email || !contact) {
+      return res.status(400).json({
+        success: false,
+        message: "Full name, email, and contact are required",
+      });
+    }
+    const existingPatient = await userModel.findOne({
+      $or: [{ email }, { contact }],
+    });
+
+    if (!existingPatient) {
+      return res.status(409).json({
+        success: false,
+        message: "Patient already exists with this email or phone",
+      });
+    }
+    const patient = await userModel.create({
+      fullName,
+      email,
+      contact,
+      role: "patient",
+      dob,
+      age,
+      gender,
+      patientType: patientType || "New Patient",
+      address: {
+        street: address?.street,
+        city: address?.city,
+        state: address?.state,
+        zip: address?.zip,
+      },
+      emergencyContact: {
+        name: emergencyContact?.name,
+        number: emergencyContact?.number,
+      },
+      chronicConditions,
+      createdByDoctor: doctor._id,
+      isAccountVerified: true, 
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Patient created successfully",
+      patient: {
+        id: patient._id,
+        fullName: patient.fullName,
+        email: patient.email,
+        contact: patient.contact,
+        patientId: patient.patientId,
+        bloodGroup: patient.bloodGroup,
+      },
+    });
+  } catch (err) {
+    console.error("createPatientByDoctor Error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+

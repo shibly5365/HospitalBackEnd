@@ -89,13 +89,15 @@ export const createMedicalRecord = async (req, res) => {
 
 export const doctorGetAllMedicalRecords = async (req, res) => {
   try {
-    const doctorId = req.user._id;
+    const doctorUserId = req.user._id;
+    const doctor = await doctorModel.findOne({ userId: doctorUserId }).select("_id").lean();
+    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
 
-    const records = await MedicalRecord.find({ doctor: doctorId })
-      .populate("patient")
-      .populate("appointment")
-      .populate("payment")
-      .populate("prescription");
+    const records = await MedicalRecord.find({ doctor: doctor._id })
+      .select("_id appointment patient doctor chiefComplaint diagnosis vitals createdAt")
+      .populate({ path: "patient", select: "fullName patientId profileImage" })
+      .populate({ path: "appointment", select: "appointmentDate timeSlot" })
+      .lean();
 
     return res.json({ success: true, records });
   } catch (err) {
@@ -104,21 +106,22 @@ export const doctorGetAllMedicalRecords = async (req, res) => {
 };
 export const doctorGetMedicalRecordById = async (req, res) => {
   try {
-    const doctorId = req.user._id;
+    const doctorUserId = req.user._id;
     const { id } = req.params;
 
+    const doctor = await doctorModel.findOne({ userId: doctorUserId }).select("_id").lean();
+    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
+
     const record = await MedicalRecord.findById(id)
-      .populate("patient")
-      .populate("appointment")
-      .populate("prescription");
+      .populate({ path: "patient", select: "fullName patientId" })
+      .populate({ path: "appointment", select: "appointmentDate timeSlot reason" })
+      .populate({ path: "prescription", select: "medicines notes" })
+      .lean();
 
-    if (!record)
-      return res.status(404).json({ success: false, message: "Not found" });
+    if (!record) return res.status(404).json({ success: false, message: "Not found" });
 
-    if (record.doctor.toString() !== doctorId.toString())
-      return res
-        .status(403)
-        .json({ success: false, message: "Unauthorized doctor" });
+    if (record.doctor.toString() !== doctor._id.toString())
+      return res.status(403).json({ success: false, message: "Unauthorized doctor" });
 
     return res.json({ success: true, record });
   } catch (err) {
@@ -127,19 +130,17 @@ export const doctorGetMedicalRecordById = async (req, res) => {
 };
 export const updateMedicalRecord = async (req, res) => {
   try {
-    const doctorId = req.user._id;
+    const doctorUserId = req.user._id;
     const { id } = req.params;
 
-    const record = await MedicalRecord.findById(id);
-    if (!record)
-      return res
-        .status(404)
-        .json({ success: false, message: "Record not found" });
+    const doctor = await doctorModel.findOne({ userId: doctorUserId }).select("_id").lean();
+    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
 
-    if (record.doctor.toString() !== doctorId.toString())
-      return res
-        .status(403)
-        .json({ success: false, message: "Unauthorized doctor" });
+    const record = await MedicalRecord.findById(id);
+    if (!record) return res.status(404).json({ success: false, message: "Record not found" });
+
+    if (record.doctor.toString() !== doctor._id.toString())
+      return res.status(403).json({ success: false, message: "Unauthorized doctor" });
 
     Object.assign(record, req.body);
     await record.save();
@@ -151,22 +152,19 @@ export const updateMedicalRecord = async (req, res) => {
 };
 export const deleteMedicalRecord = async (req, res) => {
   try {
-    const doctorId = req.user._id;
+    const doctorUserId = req.user._id;
     const { id } = req.params;
 
-    const record = await MedicalRecord.findById(id);
-    if (!record)
-      return res
-        .status(404)
-        .json({ success: false, message: "Record not found" });
+    const doctor = await doctorModel.findOne({ userId: doctorUserId }).select("_id").lean();
+    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
 
-    if (record.doctor.toString() !== doctorId.toString())
-      return res
-        .status(403)
-        .json({ success: false, message: "Unauthorized doctor" });
+    const record = await MedicalRecord.findById(id);
+    if (!record) return res.status(404).json({ success: false, message: "Record not found" });
+
+    if (record.doctor.toString() !== doctor._id.toString())
+      return res.status(403).json({ success: false, message: "Unauthorized doctor" });
 
     await MedicalRecord.findByIdAndDelete(id);
-
     return res.json({ success: true, message: "Medical record deleted" });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
