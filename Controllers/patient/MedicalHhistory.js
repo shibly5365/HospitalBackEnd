@@ -6,65 +6,88 @@ import Appointment from "../../Models/Appointment/Appointment.js";
 import Payment from "../../Models/Payments/paymentSchema.js";
 
 // ===============================
-// 1️⃣ GET ALL MEDICAL RECORDS (PATIENT) - Formatted for Frontend
+// 1️⃣ GET ALL MEDICAL RECORDS (PATIENT) - OPTIMIZED
 // ===============================
 export const patientGetAllMedicalRecords = async (req, res) => {
   try {
     const patientId = req.user._id;
+    const page = Math.max(1, parseInt(req.query.page || "1", 10));
+    const limit = Math.max(1, Math.min(50, parseInt(req.query.limit || "20", 10))); // Max 50 per page
+    const skip = (page - 1) * limit;
 
     // Get patient info
-    const patient = await userModel.findById(patientId);
+    const patient = await userModel
+      .findById(patientId)
+      .select("fullName age gender bloodGroup patientType insuranceInfo emergencyContact contact email address profileImage")
+      .lean();
     if (!patient) {
       return res.status(404).json({ success: false, message: "Patient not found" });
     }
 
-    // Get all medical records
-    const records = await MedicalRecord.find({ patient: patientId })
-      .populate({
-        path: "doctor",
-        populate: [
-          {
-            path: "userId",
-            select: "fullName profileImage",
-          },
-          {
-            path: "department",
-            select: "departmentName",
-          },
-        ],
-      })
-      .populate("appointment")
-      .populate("prescription")
-      .sort({ createdAt: -1 });
-
-    // Get all prescriptions
-    const prescriptions = await Prescription.find({ patient: patientId })
-      .populate({
-        path: "doctor",
-        populate: [
-          {
-            path: "userId",
-            select: "fullName",
-          },
-          {
-            path: "department",
-            select: "departmentName",
-          },
-        ],
-      })
-      .populate({
-        path: "medicalRecord",
-        populate: {
+    // ⭐ OPTIMIZED: Parallel queries with .lean() for read-only performance
+    const [records, prescriptions, totalRecords] = await Promise.all([
+      // Get medical records with pagination
+      MedicalRecord.find({ patient: patientId })
+        .populate({
+          path: "doctor",
+          select: "userId department",
+          populate: [
+            {
+              path: "userId",
+              select: "fullName profileImage",
+            },
+            {
+              path: "department",
+              select: "name",
+            },
+          ],
+        })
+        .populate({
           path: "appointment",
-        },
-      })
-      .sort({ createdAt: -1 });
+          select: "appointmentDate reason",
+        })
+        .select("chiefComplaint symptoms diagnosis vitals labReports notes createdAt appointment doctor")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+
+      // Get all prescriptions (for this patient)
+      Prescription.find({ patient: patientId })
+        .populate({
+          path: "doctor",
+          select: "userId department",
+          populate: [
+            {
+              path: "userId",
+              select: "fullName",
+            },
+            {
+              path: "department",
+              select: "name",
+            },
+          ],
+        })
+        .populate({
+          path: "medicalRecord",
+          select: "appointment",
+          populate: {
+            path: "appointment",
+            select: "appointmentDate",
+          },
+        })
+        .sort({ createdAt: -1 })
+        .lean(),
+
+      // Get total count for pagination
+      MedicalRecord.countDocuments({ patient: patientId }),
+    ]);
 
     // Format prescriptions for frontend
     const formattedPrescriptions = prescriptions.map((prescription) => {
       const doctor = prescription.doctor;
       const doctorName = doctor?.userId?.fullName || "Unknown Doctor";
-      const departmentName = doctor?.department?.departmentName || "Unknown Department";
+      const departmentName = doctor?.department?.name || "Unknown Department";
       const record = prescription.medicalRecord;
       const appointment = record?.appointment;
 
@@ -94,7 +117,7 @@ export const patientGetAllMedicalRecords = async (req, res) => {
       .map((record) => {
         const doctor = record.doctor;
         const doctorName = doctor?.userId?.fullName || "Unknown Doctor";
-        const departmentName = doctor?.department?.departmentName || "Unknown Department";
+        const departmentName = doctor?.department?.name || "Unknown Department";
         const appointment = record.appointment;
 
         return {
@@ -165,6 +188,9 @@ export const patientGetAllMedicalRecords = async (req, res) => {
 
     return res.json({
       success: true,
+      page,
+      limit,
+      total: totalRecords,
       data: {
         patient: patientData,
         prescriptions: formattedPrescriptions,

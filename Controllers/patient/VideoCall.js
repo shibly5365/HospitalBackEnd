@@ -14,7 +14,6 @@ export const generateVideoCallRoom = async (req, res) => {
     const appointment = await Appointment.findById(appointmentId)
       .populate("patient", "name email")
       .populate("doctor", "name email");
-    // console.log("appiijt",appointment);
 
     if (!appointment) {
       return res.status(404).json({
@@ -39,8 +38,6 @@ export const generateVideoCallRoom = async (req, res) => {
     }
 
     // Check if appointment is confirmed
-    console.log(appointment.status);
-    
     if (appointment.status !== "Confirmed") {
       return res.status(400).json({
         success: false,
@@ -192,7 +189,7 @@ export const endVideoCall = async (req, res) => {
       });
     }
 
-    const isPatientEnd = appointment.patient.toString() === userId.toString();
+    const isPatientEnd = appointment.patient._id.toString() === userId.toString();
     const doctorDoc = await doctorModel.findById(appointment.doctor);
     const isDoctorEnd =
       doctorDoc &&
