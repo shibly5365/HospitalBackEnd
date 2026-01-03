@@ -15,8 +15,6 @@ export const AuthMiddleware = (allowedRoles = []) => {
       else if (req.cookies?.token) {
         token = req.cookies.token;
       }
-      // console.log(token);
-      // console.log(req.headers);
 
       if (!token) {
         return res.status(401).json({ message: "Token not provided" });
@@ -24,16 +22,9 @@ export const AuthMiddleware = (allowedRoles = []) => {
 
       // 3️⃣ Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      //       console.log(decoded.role);
-      //       console.log("Token:", token);
-      // console.log("Decoded:", decoded);
 
       // 4️⃣ Find user
       const user = await userModel.findById(decoded._id);
-      // console.log(user.role);
-      
-      if (!user) return res.status(403).json({ message: "User not found" });
-
       // 5️⃣ Role-based access
       if (
         allowedRoles.length &&
