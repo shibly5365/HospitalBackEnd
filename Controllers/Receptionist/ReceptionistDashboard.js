@@ -13,10 +13,23 @@ const getTodayRange = () => {
 // Get all appointments
 export const getAllAppointments = async (req, res) => {
   try {
-    const appointments = await Appointment.find()
-      .populate("patient")
-      .populate("doctor", "");
-    res.status(200).json({ success: true, data: appointments });
+    const page = Math.max(1, parseInt(req.query.page || "1", 10));
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit || "50", 10)));
+    const skip = (page - 1) * limit;
+
+    const [appointments, total] = await Promise.all([
+      Appointment.find()
+        .select("_id patient doctor appointmentDate timeSlot status")
+        .populate("patient", "fullName patientId contact profileImage")
+        .populate({ path: "doctor", select: "userId specialization" , populate: { path: "userId", select: "fullName profileImage" } })
+        .sort({ appointmentDate: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Appointment.countDocuments(),
+    ]);
+
+    res.status(200).json({ success: true, page, limit, total, data: appointments });
   } catch (error) {
     console.error("Error fetching all appointments:", error);
     res.status(500).json({ success: false, message: "Server Error" });
@@ -27,13 +40,14 @@ export const getAllAppointments = async (req, res) => {
 export const getTodayAppointments = async (req, res) => {
   try {
     const { start, end } = getTodayRange();
-    const appointments = await Appointment.find({
-      appointmentDate: { $gte: start, $lte: end },
-    })
-      .populate("patient")
-      .populate("doctor");
+    const appointments = await Appointment.find({ appointmentDate: { $gte: start, $lte: end } })
+      .select("_id patient doctor appointmentDate timeSlot status")
+      .populate("patient", "fullName contact patientId")
+      .populate({ path: "doctor", select: "userId", populate: { path: "userId", select: "fullName" } })
+      .sort({ "timeSlot.start": 1 })
+      .lean();
 
-    res.status(200).json({ success: true, data: appointments });
+    res.status(200).json({ success: true, count: appointments.length, data: appointments });
   } catch (error) {
     console.error("Error fetching today's appointments:", error);
     res.status(500).json({ success: false, message: "Server Error" });
@@ -68,10 +82,16 @@ export const getTodayStatusCounts = async (req, res) => {
 // Get all patients with count
 export const getPatientsWithCount = async (req, res) => {
   try {
-    const patients = await userModel.find({ role: "patient" });
-    const count = await userModel.countDocuments({ role: "patient" });
+    const page = Math.max(1, parseInt(req.query.page || "1", 10));
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit || "25", 10)));
+    const skip = (page - 1) * limit;
 
-    res.status(200).json({ success: true, count, data: patients });
+    const [patients, count] = await Promise.all([
+      userModel.find({ role: "patient" }).select("fullName email contact patientId profileImage").skip(skip).limit(limit).lean(),
+      userModel.countDocuments({ role: "patient" }),
+    ]);
+
+    res.status(200).json({ success: true, page, limit, count, data: patients });
   } catch (error) {
     console.error("Error getting patients:", error);
     res.status(500).json({ success: false, message: "Server Error" });
@@ -82,12 +102,12 @@ export const getPatientsWithCount = async (req, res) => {
 export const getWaitingRoomList = async (req, res) => {
   try {
     const { start, end } = getTodayRange();
-    const waitingList = await Appointment.find({
-      appointmentDate: { $gte: start, $lte: end },
-      status: { $in: ["Pending", "Confirmed", "With-Doctor"] },
-    })
-      .populate("patient")
-      .populate("doctor");
+    const waitingList = await Appointment.find({ appointmentDate: { $gte: start, $lte: end }, status: { $in: ["Pending", "Confirmed", "With-Doctor"] } })
+      .select("_id patient doctor appointmentDate timeSlot status")
+      .populate("patient", "fullName contact patientId")
+      .populate({ path: "doctor", select: "userId", populate: { path: "userId", select: "fullName" } })
+      .sort({ "timeSlot.start": 1 })
+      .lean();
 
     res.status(200).json({ success: true, data: waitingList });
   } catch (error) {
@@ -100,11 +120,12 @@ export const getWaitingRoomList = async (req, res) => {
 export const getUpcomingAppointments = async (req, res) => {
   try {
     const { end } = getTodayRange();
-    const upcoming = await Appointment.find({
-      appointmentDate: { $gt: new Date(end) },
-    })
-      .populate("patient")
-      .populate("doctor");
+    const upcoming = await Appointment.find({ appointmentDate: { $gt: new Date(end) } })
+      .select("_id patient doctor appointmentDate timeSlot status")
+      .populate("patient", "fullName contact")
+      .populate({ path: "doctor", select: "userId", populate: { path: "userId", select: "fullName" } })
+      .sort({ appointmentDate: 1 })
+      .lean();
 
     res.status(200).json({ success: true, data: upcoming });
   } catch (error) {
@@ -136,12 +157,7 @@ export const getDoctorsOnDutyToday = async (req, res) => {
     const doctorIds = await Appointment.distinct("doctor", {
       appointmentDate: { $gte: start, $lte: end },
     });
-
-    const doctors = await User.find({
-      _id: { $in: doctorIds },
-      role: "doctor",
-    });
-
+    const doctors = await userModel.find({ _id: { $in: doctorIds }, role: "doctor" }).select("fullName profileImage").lean();
     res.status(200).json({ success: true, data: doctors });
   } catch (error) {
     console.error("Error getting today's doctors on duty:", error);
