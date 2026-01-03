@@ -31,7 +31,7 @@ export const SignUp = async (req, res) => {
       password: hashedPassword,
       contact,
       role: "patient", // default role
-      patientType,
+      patientType:"New Patient",
       age,
       gender,
       verifyOtp,
@@ -39,6 +39,8 @@ export const SignUp = async (req, res) => {
     });
 
     await patient.save();
+    console.log(patient);
+    
 
     res.status(201).json({
       message: "Signup successful. Please verify your email with the OTP.",

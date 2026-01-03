@@ -38,7 +38,7 @@ export const ForgetPassword = async (req, res) => {
     });
     res.json({ message: "Reset link sent to email", });
   } catch (error) {
-    console.log("Forget error", error);
+    console.error("❌ Forgot password error:", error.message);
 
     res.status(500).json({ message: error.message });
   }
@@ -67,7 +67,7 @@ export const ResetPassword = async (req, res) => {
     await user.save();
     res.json({ message: "Password reset successful" });
   } catch (error) {
-    console.log("resetPass", error);
+    console.error("❌ Reset password error:", error.message);
 
     res.status(400).json({ message: "Invalid or expired token" });
   }
