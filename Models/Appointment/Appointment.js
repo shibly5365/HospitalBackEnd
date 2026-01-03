@@ -68,8 +68,19 @@ const appointmentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Index to avoid overlapping appointments for the same doctor
+// ⭐ Performance Indexes
+// Existing index for overlapping appointment check
 appointmentSchema.index({ doctor: 1, appointmentDate: 1 });
+
+// Additional critical indexes for query optimization
+appointmentSchema.index({ patient: 1, appointmentDate: -1 }); // Patient's appointments sorted by date
+appointmentSchema.index({ doctor: 1, status: 1 }); // Doctor's appointments by status
+appointmentSchema.index({ patient: 1, status: 1 }); // Patient's appointments by status
+appointmentSchema.index({ appointmentDate: -1 }); // General sorting by date
+appointmentSchema.index({ status: 1 }); // Filtering by status
+appointmentSchema.index({ paymentStatus: 1 }); // Payment status queries
+appointmentSchema.index({ createdAt: -1 }); // Recent appointments
+appointmentSchema.index({ doctor: 1, appointmentDate: 1, status: 1 }); // Compound for doctor daily view
 
 const Appointment =
   mongoose.models.appointment ||

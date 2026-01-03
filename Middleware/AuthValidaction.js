@@ -12,7 +12,7 @@ export const SignUpValidation = (req, res, next) => {
     age: Joi.number().min(0).max(120).required(),
     patientType: Joi.string()
       .valid("New Patient", "Returning Patient", "Other")
-      .required(),
+      .default("New Patient")
   });
   const { error } = schema.validate(req.body);
   if (error) {

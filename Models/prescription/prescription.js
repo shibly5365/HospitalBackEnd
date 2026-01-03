@@ -35,6 +35,12 @@ const prescriptionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// ⭐ Performance Indexes
+prescriptionSchema.index({ patient: 1, createdAt: -1 }); // Patient's prescriptions sorted by date
+prescriptionSchema.index({ doctor: 1 }); // Doctor's prescriptions
+prescriptionSchema.index({ medicalRecord: 1 }); // Lookup by medical record
+prescriptionSchema.index({ createdAt: -1 }); // Recent prescriptions
+
 const Prescription =
   mongoose.models.prescription ||
   mongoose.model("prescription", prescriptionSchema);

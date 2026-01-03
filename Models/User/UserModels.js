@@ -117,6 +117,15 @@ const userSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// ⭐ Performance Indexes
+userSchema.index({ email: 1 }); // Already unique, but explicit for query optimization
+userSchema.index({ role: 1 }); // Fast filtering by user role
+userSchema.index({ patientId: 1, sparse: true }); // Sparse index for patient lookup
+userSchema.index({ createdAt: -1 }); // For sorting by creation date
+userSchema.index({ isBlocked: 1, role: 1 }); // Compound index for patient queries
+userSchema.index({ isAccountVerified: 1 }); // For filtering verified/unverified users
+
 userSchema.pre("save", generatePatientId);
 
 const userModel = mongoose.model("users", userSchema);

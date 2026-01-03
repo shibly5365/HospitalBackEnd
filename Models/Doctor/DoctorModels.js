@@ -60,5 +60,13 @@ const doctorSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// ⭐ Performance Indexes
+doctorSchema.index({ userId: 1 }); // Fast doctor lookup by userId
+doctorSchema.index({ department: 1 }); // Fast filtering by department
+doctorSchema.index({ status: 1 }); // For availability queries
+doctorSchema.index({ doctorId: 1 }); // Fast lookup by doctor ID
+doctorSchema.index({ createdAt: -1 }); // For sorting
+doctorSchema.index({ department: 1, status: 1 }); // Compound for department queries
+
 const doctorModel = mongoose.model("doctors", doctorSchema);
 export default doctorModel;

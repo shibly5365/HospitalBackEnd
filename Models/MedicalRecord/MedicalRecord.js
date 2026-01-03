@@ -102,6 +102,13 @@ const medicalRecordSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// ⭐ Performance Indexes
+medicalRecordSchema.index({ patient: 1, createdAt: -1 }); // Patient's records sorted by date
+medicalRecordSchema.index({ doctor: 1 }); // Doctor's records
+medicalRecordSchema.index({ appointment: 1 }); // Lookup by appointment
+medicalRecordSchema.index({ status: 1 }); // Active/archived records
+medicalRecordSchema.index({ patient: 1, status: 1 }); // Patient's active records
+
 const MedicalRecord =
   mongoose.models.medicalRecord ||
   mongoose.model("medicalRecord", medicalRecordSchema);

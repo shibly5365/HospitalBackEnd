@@ -47,6 +47,7 @@ import {
   updateMedicalRecord,
 } from "../../Controllers/Doctor/MedicalRecord.js";
 import {
+  createPatientByDoctor,
   getDoctorAllPatients,
   getPatientById,
 } from "../../Controllers/Doctor/getAllPatients.js";
@@ -189,6 +190,11 @@ DoctorRouting.delete(
 
 // Patients
 
+DoctorRouting.post(
+  "/createPatintes",
+  AuthMiddleware(["doctor"]),
+  createPatientByDoctor
+);
 DoctorRouting.get(
   "/getallPatients",
   AuthMiddleware(["doctor"]),

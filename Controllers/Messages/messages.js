@@ -7,7 +7,6 @@ import userModel from "../../Models/User/UserModels.js";
 export const sendMessage = async (req, res) => {
   try {
     const { receiverId, text, receiverType = 'users' } = req.body;
-    console.log(receiverId);
 
     // Determine actual user ID of receiver
     let actualReceiverId = receiverId;
@@ -24,8 +23,6 @@ export const sendMessage = async (req, res) => {
         return res.status(404).json({ message: 'Receptionist not found' });
       actualReceiverId = receptionist.userId;
     }
-
-    console.log(actualReceiverId);
 
     // Find the receiver user
     const receiver = await userModel.findById(actualReceiverId);
