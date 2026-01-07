@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "4002:4002"
+    environment:
+      - NODE_ENV=development
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/node_modules
+    restart: always
