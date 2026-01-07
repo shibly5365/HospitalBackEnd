@@ -1,7 +1,7 @@
 import moment from "moment";
 import DoctorSchedule from "../../Models/Doctor/ScheduleSchema.js";
 import doctorModel from "../../Models/Doctor/DoctorModels.js";
-import DoctorLeave from "../../Models/LeaveRequest/LeaveSchema.js";
+import DoctorLeave from "../../Models/LeaveRequest/leaveSchema.js";
 
 // ================= SLOT GENERATOR =================
 
