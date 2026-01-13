@@ -8,9 +8,8 @@ export const generateVideoCallRoom = async (req, res) => {
   try {
     const { appointmentId } = req.params;
     const userId = req.user._id;
-    const userRole = req.user.role;
 
-    // Verify appointment exists
+    // Find appointment
     const appointment = await Appointment.findById(appointmentId)
       .populate("patient", "name email")
       .populate("doctor", "name email");
@@ -22,81 +21,62 @@ export const generateVideoCallRoom = async (req, res) => {
       });
     }
 
-    // Only allow patient owner or the assigned doctor to create the room
-    const isPatient = appointment.patient._id.toString() === userId.toString();
-    // resolve doctor document to compare its userId to current user
-    const doctorDoc = await doctorModel.findById(appointment.doctor);
-    const isDoctor =
-      doctorDoc &&
-      doctorDoc.userId &&
-      doctorDoc.userId.toString() === userId.toString();
-    if (!isPatient && !isDoctor) {
-      return res.status(403).json({
-        success: false,
-        message: "Unauthorized: Not part of this appointment",
-      });
-    }
-
-    // Check if appointment is confirmed
+    // Check appointment is confirmed
     if (appointment.status !== "Confirmed") {
       return res.status(400).json({
         success: false,
-        message: `Video call not allowed. Appointment status is "${appointment.status}"`,
+        message: "Video call available only for confirmed appointments",
       });
     }
 
-    // Check if appointment is online
-    if (appointment.consultationType?.toLowerCase() !== "online") {
+    // Check online consultation
+    if (appointment.consultationType !== "online") {
       return res.status(400).json({
         success: false,
-        message: "This is an offline appointment",
+        message: "This appointment is not online",
       });
     }
 
-    // Check appointment time window for patients only. Doctors may create the room any time after confirmation.
-    const appointmentDateTime = new Date(
-      `${appointment.appointmentDate}T${appointment.timeSlot.start}`
-    );
-    const currentTime = new Date();
-    const diffMinutes = (appointmentDateTime - currentTime) / 60000;
+    // Authorization: patient or doctor
+    const isPatient =
+      appointment.patient._id.toString() === userId.toString();
 
-    if (userRole !== "doctor") {
-      if (diffMinutes > 30 || diffMinutes < -30) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Video call can only be joined 30 minutes before or after appointment time",
-        });
-      }
+    const doctorDoc = await doctorModel.findById(appointment.doctor);
+    const isDoctor =
+      doctorDoc?.userId?.toString() === userId.toString();
+
+    if (!isPatient && !isDoctor) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
     }
 
-    // Generate unique room ID if not exists
-    let roomId = appointment.videoLink;
-    if (!roomId) {
-      roomId = `room_${appointmentId}_${Date.now()}`;
-      appointment.videoLink = roomId;
+    // Create room if not exists
+    if (!appointment.videoLink) {
+      appointment.videoLink = `video_${appointmentId}`;
       await appointment.save();
     }
 
     return res.status(200).json({
       success: true,
-      message: "Video call room created",
+      message: "Video call ready",
       data: {
-        roomId,
+        roomId: appointment.videoLink,
         appointmentId,
         patientName: appointment.patient.name,
         doctorName: appointment.doctor.name,
-        appointmentTime: appointmentDateTime,
       },
     });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "Error generating video call",
+      message: "Error creating video call",
       error: error.message,
     });
   }
 };
+
 
 // ==========================================
 // Get Video Call Status
