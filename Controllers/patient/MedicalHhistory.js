@@ -294,7 +294,7 @@ export const patientGetConsultationsByDoctor = async (req, res) => {
         populate: [
           {
             path: "userId",
-            select: "fullName",
+            select: "fullName profileImage",
           },
           {
             path: "department",
@@ -350,33 +350,44 @@ export const patientGetConsultationsByDoctor = async (req, res) => {
         doctorsMap.set(doctorId, {
           id: doctorId,
           doctorId: doctor._id,
-          avatar: doctorUserId?.profileImage || "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=400&h=400&fit=crop",
+          avatar:
+            doctorUserId?.profileImage ||
+            "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=400&h=400&fit=crop",
           name: `Dr. ${doctorUserId?.fullName || "Unknown"}`,
           department: doctor.department?.departmentName || "Unknown",
           specialization: doctor.specialization || "General",
-          rating: 4.8, // Default rating, can be enhanced later
+          rating: 4.8,
           nextAppointment: null,
           medicalHistory: [],
         });
       }
 
-      // Find payment for this appointment
       const payment = payments.find(
-        (p) => p.appointment?._id?.toString() === appointment._id.toString()
+        (p) =>
+          p.appointment?._id?.toString() ===
+          appointment._id.toString()
       );
 
-      // Find prescription for this record
       const prescription = prescriptions.find(
-        (p) => p.medicalRecord?._id?.toString() === record._id.toString()
+        (p) =>
+          p.medicalRecord?._id?.toString() ===
+          record._id.toString()
       );
 
-      // Format prescription text
       let prescriptionText = "";
-      if (prescription && prescription.medicines && prescription.medicines.length > 0) {
+      if (
+        prescription &&
+        prescription.medicines &&
+        prescription.medicines.length > 0
+      ) {
         prescriptionText = prescription.medicines
           .map(
             (med) =>
-              `${med.medicineName}${med.dosage ? ` (${med.dosage})` : ""}${med.duration ? ` - ${med.duration}` : ""}`
+              `${med.medicineName}${
+                med.dosage ? ` (${med.dosage})` : ""
+              }${
+                med.duration ? ` - ${med.duration}` : ""
+              }`
           )
           .join(", ");
       } else if (prescription?.notes) {
@@ -385,36 +396,38 @@ export const patientGetConsultationsByDoctor = async (req, res) => {
         prescriptionText = "No prescription provided";
       }
 
-      // Format diagnosis
       const diagnosis =
         record.diagnosis && record.diagnosis.length > 0
           ? record.diagnosis.join(", ")
           : record.chiefComplaint || "General Consultation";
 
-      // Get the actual date for sorting
       const appointmentDateObj = appointment.appointmentDate
         ? new Date(appointment.appointmentDate)
         : record.createdAt
         ? new Date(record.createdAt)
         : new Date();
 
-      // Format date for display
       const date = appointmentDateObj.toLocaleDateString("en-US", {
         year: "numeric",
         month: "short",
         day: "numeric",
       });
 
-      // Add to medical history with both formatted date and timestamp for sorting
       doctorsMap.get(doctorId).medicalHistory.push({
         date,
-        dateTimestamp: appointmentDateObj.getTime(), // For sorting
+        dateTimestamp: appointmentDateObj.getTime(),
         prescription: prescriptionText,
         payment: {
           status: payment?.status || "Pending",
-          amount: payment?.amount ? `₹${payment.amount}` : "₹0",
+          amount: payment?.amount
+            ? `₹${payment.amount}`
+            : "₹0",
         },
-        notes: record.notes || record.symptoms || prescription?.notes || "No notes available",
+        notes:
+          record.notes ||
+          record.symptoms ||
+          prescription?.notes ||
+          "No notes available",
         diagnosis,
         appointmentId: appointment._id,
         recordId: record._id,
@@ -432,52 +445,45 @@ export const patientGetConsultationsByDoctor = async (req, res) => {
 
     upcomingAppointments.forEach((appointment) => {
       if (!appointment.doctor) return;
+
       const doctorId = appointment.doctor._id.toString();
 
       if (doctorsMap.has(doctorId)) {
-        const appointmentDate = new Date(appointment.appointmentDate);
-        const formattedDate = appointmentDate.toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        });
-        const formattedTime = appointmentDate.toLocaleTimeString("en-US", {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
+        const appointmentDate = new Date(
+          appointment.appointmentDate
+        );
+        const formattedDate =
+          appointmentDate.toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          });
+        const formattedTime =
+          appointmentDate.toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
 
-        const existingNext = doctorsMap.get(doctorId).nextAppointment;
-        const newAppointmentDate = appointmentDate;
+        const existingNext =
+          doctorsMap.get(doctorId).nextAppointment;
 
-        // Keep the earliest upcoming appointment
         if (!existingNext) {
-          doctorsMap.get(doctorId).nextAppointment = `${formattedDate} • ${formattedTime}`;
-        } else {
-          // Parse existing date to compare
-          const existingDateStr = existingNext.split(" • ")[0];
-          const existingTimeStr = existingNext.split(" • ")[1];
-          try {
-            const existingDate = new Date(existingDateStr + " " + existingTimeStr);
-            if (newAppointmentDate < existingDate) {
-              doctorsMap.get(doctorId).nextAppointment = `${formattedDate} • ${formattedTime}`;
-            }
-          } catch (e) {
-            // If parsing fails, use the new one
-            doctorsMap.get(doctorId).nextAppointment = `${formattedDate} • ${formattedTime}`;
-          }
+          doctorsMap.get(doctorId).nextAppointment =
+            `${formattedDate} • ${formattedTime}`;
         }
       }
     });
 
-    // Convert map to array and sort by most recent consultation
-    const doctorsArray = Array.from(doctorsMap.values()).map((doctor) => {
-      // Sort medical history by timestamp (most recent first)
-      const sortedHistory = doctor.medicalHistory.sort((a, b) => {
-        return (b.dateTimestamp || 0) - (a.dateTimestamp || 0);
-      });
+    const doctorsArray = Array.from(
+      doctorsMap.values()
+    ).map((doctor) => {
+      const sortedHistory = doctor.medicalHistory.sort(
+        (a, b) => b.dateTimestamp - a.dateTimestamp
+      );
 
-      // Remove timestamp before sending to frontend (keep only formatted date)
-      const cleanedHistory = sortedHistory.map(({ dateTimestamp, ...rest }) => rest);
+      const cleanedHistory = sortedHistory.map(
+        ({ dateTimestamp, ...rest }) => rest
+      );
 
       return {
         ...doctor,
@@ -485,32 +491,27 @@ export const patientGetConsultationsByDoctor = async (req, res) => {
       };
     });
 
-    // Sort doctors by most recent consultation
     doctorsArray.sort((a, b) => {
-      if (a.medicalHistory.length === 0 && b.medicalHistory.length === 0) return 0;
-      if (a.medicalHistory.length === 0) return 1;
-      if (b.medicalHistory.length === 0) return -1;
-      return new Date(b.medicalHistory[0].date) - new Date(a.medicalHistory[0].date);
+      if (!a.medicalHistory.length) return 1;
+      if (!b.medicalHistory.length) return -1;
+      return (
+        new Date(b.medicalHistory[0].date) -
+        new Date(a.medicalHistory[0].date)
+      );
     });
-
-    // Calculate summary stats
-    const totalDoctors = doctorsArray.length;
-    const totalVisits = doctorsArray.reduce((acc, doc) => acc + doc.medicalHistory.length, 0);
-    const upcomingCount = doctorsArray.filter((doc) => doc.nextAppointment !== null).length;
 
     return res.json({
       success: true,
       data: {
         doctors: doctorsArray,
-        summary: {
-          totalDoctors,
-          totalVisits,
-          upcoming: upcomingCount,
-        },
       },
     });
   } catch (err) {
-    console.error("Error fetching consultations by doctor:", err);
-    return res.status(500).json({ success: false, message: err.message });
+    console.error(err);
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
-};  
+};
+

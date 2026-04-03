@@ -1,5 +1,6 @@
 import Appointment from "../../Models/Appointment/Appointment.js";
 import doctorModel from "../../Models/Doctor/DoctorModels.js";
+import DoctorSchedule from "../../Models/Doctor/ScheduleSchema.js";
 import Payment from "../../Models/Payments/paymentSchema.js";
 import userModel from "../../Models/User/UserModels.js";
 
@@ -269,26 +270,49 @@ export const patientCancelAppointment = async (req, res) => {
     const userId = req.user._id;
     const { id } = req.params;
 
+    // 1️⃣ Find appointment
     const appointment = await Appointment.findById(id);
-    if (!appointment)
+
+    
+    if (!appointment) {
       return res.status(404).json({
         success: false,
         message: "Appointment not found",
       });
+    }
 
-    if (appointment.patient.toString() !== userId.toString())
+    // 2️⃣ Authorization check
+    if (appointment.patient.toString() !== userId.toString()) {
       return res.status(403).json({
         success: false,
         message: "Not authorized",
       });
+    }
 
-    // Mark as cancelled
+    // 3️⃣ Prevent double cancellation
+    if (appointment.status === "Cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Appointment already cancelled",
+      });
+    }
+
+    // 4️⃣ Mark appointment as cancelled
     appointment.status = "Cancelled";
 
-    // 🔥 Free the Doctor Slot (IMPORTANT FIX)
-    await DoctorSchedule.updateOne(
-      { doctor: appointment.doctor, date: appointment.appointmentDate },
-      { $set: { "slots.$[elem].isBooked": false } },
+    // 5️⃣ Normalize date (🔥 IMPORTANT FIX)
+    const scheduleDate = new Date(appointment.appointmentDate);
+    scheduleDate.setHours(0, 0, 0, 0);
+
+    // 6️⃣ Free the doctor's slot
+    const slotUpdateResult = await DoctorSchedule.updateOne(
+      {
+        doctor: appointment.doctor,
+        date: scheduleDate,
+      },
+      {
+        $set: { "slots.$[elem].isBooked": false },
+      },
       {
         arrayFilters: [
           {
@@ -299,7 +323,18 @@ export const patientCancelAppointment = async (req, res) => {
       }
     );
 
-    // Refund if payment already completed
+    // 7️⃣ Optional safety log
+    if (slotUpdateResult.modifiedCount === 0) {
+      console.warn("⚠️ Slot not freed. Schedule not matched:", {
+        doctor: appointment.doctor,
+        date: scheduleDate,
+        slot: appointment.timeSlot,
+      });
+    }
+
+    console.log(scheduleDate);
+    
+    // 8️⃣ Refund if payment was completed
     if (appointment.paymentStatus === "Paid") {
       const payment = await Payment.findOne({
         appointment: id,
@@ -310,24 +345,29 @@ export const patientCancelAppointment = async (req, res) => {
         payment.status = "Refunded";
         payment.type = "Refund";
         await payment.save();
+
         appointment.paymentStatus = "Refunded";
       }
     }
 
+    // 9️⃣ Save appointment
     await appointment.save();
 
+    // 🔟 Final response
     return res.json({
       success: true,
-      message: "Appointment cancelled",
+      message: "Appointment cancelled successfully",
       appointment,
     });
   } catch (error) {
+    console.error("Cancel appointment error:", error);
     return res.status(500).json({
       success: false,
       message: error.message,
     });
   }
 };
+
 
 // ===============================
 // 6️⃣ DELETE APPOINTMENT (PATIENT CAN DELETE CANCELLED/REJECTED)
