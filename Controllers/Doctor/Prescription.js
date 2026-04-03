@@ -1,6 +1,7 @@
 import Prescription from "../../Models/prescription/prescription.js";
 import MedicalRecord from "../../Models/MedicalRecord/MedicalRecord.js";
 import doctorModel from "../../Models/Doctor/DoctorModels.js";
+import appointmentModel from "../../Models/Appointment/Appointment.js";
 
 // 🟢 DOCTOR: Create Prescription
 export const createPrescription = async (req, res) => {
@@ -231,6 +232,47 @@ export const deletePrescription = async (req, res) => {
     res.json({ success: true, message: "Prescription deleted" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// DOCTOR: Get Appointment By ID (for prescription page)
+export const getAppointmentById = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+
+    const appointment = await appointmentModel
+      .findById(appointmentId)
+      .populate({
+        path: "doctor",
+        select: "userId",
+        populate: {
+          path: "userId",
+          select: "fullName",
+        },
+      })
+      .populate({
+        path: "patient",
+        select: "fullName",
+      });
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Appointment not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Appointment fetched",
+      appointment,
+    });
+  } catch (err) {
+    console.error("Get Appointment By ID Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
 
