@@ -14,11 +14,6 @@ import {
   updateAppointmentStatus,
 } from "../../Controllers/Doctor/DoctorAppointmens.js";
 import {
-  generateVideoCallRoom,
-  getVideoCallStatus,
-  endVideoCall,
-} from "../../Controllers/patient/VideoCall.js";
-import {
   createSchedule,
   deleteSchedule,
   getDoctorSchedules,
@@ -55,6 +50,7 @@ import { getDashboardSummary } from "../../Controllers/Doctor/DoctorDashboardSta
 import { createLeaveRequest } from "../../Controllers/Doctor/LeaveRequest.js";
 
 // import { expression } from "joi";
+import { getConversation, sendMessage } from "../../Controllers/Messages/messages.js";
 
 const DoctorRouting = express.Router();
 
@@ -91,8 +87,18 @@ DoctorRouting.post(
 
 
 DoctorRouting.get("/nextAppointment",AuthMiddleware(["doctor"]),getTodaysNextAppointment)
+DoctorRouting.post(
+  "/nextAppointment",
+  AuthMiddleware(["doctor"]),
+  createNextVisitAppointment
+);
 
 DoctorRouting.get("/app/:id", AuthMiddleware(["doctor"]), getAppointmentById);
+DoctorRouting.get(
+  "/appointment/:id",
+  AuthMiddleware(["doctor"]),
+  getAppointmentById
+);
 DoctorRouting.put(
   "/statusAppo",
   AuthMiddleware(["doctor"]),
@@ -211,20 +217,17 @@ DoctorRouting.get(
 DoctorRouting.post("/leave-request", AuthMiddleware(["doctor"]), createLeaveRequest);
 
 // 📹 Video Call Routes (doctor)
+
+// Messages
 DoctorRouting.post(
-  "/video-call/:appointmentId",
+  "/sendMessage",
   AuthMiddleware(["doctor"]),
-  generateVideoCallRoom
+  sendMessage
 );
 DoctorRouting.get(
-  "/video-call-status/:appointmentId",
+  "/getMessage/:userId",
   AuthMiddleware(["doctor"]),
-  getVideoCallStatus
-);
-DoctorRouting.put(
-  "/video-call-end/:appointmentId",
-  AuthMiddleware(["doctor"]),
-  endVideoCall
+  getConversation
 );
 
 export default DoctorRouting;

@@ -21,11 +21,6 @@ import {
   patientGetMyAppointments,
   updateAppointment,
 } from "../../Controllers/patient/Appointments.js";
-import {
-  generateVideoCallRoom,
-  getVideoCallStatus,
-  endVideoCall,
-} from "../../Controllers/patient/VideoCall.js";
 import { getPatientDashboardSummary } from "../../Controllers/patient/PatientDashboardSummary.js";
 import {
   patientDeleteMedicalRecord,
@@ -91,21 +86,6 @@ PatientRouting.delete(
 );
 
 // 📹 Video Call Routes
-PatientRouting.post(
-  "/video-call/:appointmentId",
-  AuthMiddleware(["patient","doctor"]),
-  generateVideoCallRoom
-);
-PatientRouting.get(
-  "/video-call-status/:appointmentId",
-  AuthMiddleware(["patient","doctor"]),
-  getVideoCallStatus
-);
-PatientRouting.put(
-  "/video-call-end/:appointmentId",
-  AuthMiddleware(["patient","doctor"]),
-  endVideoCall
-);
 
 // Dashboard
 
@@ -219,7 +199,7 @@ PatientRouting.post(
   sendMessage
 );
 PatientRouting.get(
-  "/getMessage",
+  "/getMessage/:userId",
   AuthMiddleware(["patient"]),
   getConversation
 );
