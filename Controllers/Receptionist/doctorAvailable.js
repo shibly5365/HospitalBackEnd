@@ -187,20 +187,34 @@ export const getDoctorAvailableDates = async (req, res) => {
   try {
     const { id: doctorId } = req.params;
 
-    const schedules = await DoctorSchedule.find({ doctor: doctorId });
-    if (!schedules.length) return res.status(404).json({ message: "No schedules found for this doctor" });
+    // ✅ Today (start of day)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // ✅ Only fetch today + future schedules from DB
+    const schedules = await DoctorSchedule.find({
+      doctor: doctorId,
+      date: { $gte: today }
+    });
+
+    if (!schedules.length)
+      return res.status(404).json({ message: "No schedules found for this doctor" });
 
     const availableDates = schedules
-      .filter(sch => {
+      .filter((sch) => {
+        // generate slots if not exists
         if (!sch.slots || sch.slots.length === 0) {
           sch.slots = generateSlots(sch.workingHours, sch.breaks);
         }
-        return sch.slots.some(slot => !slot.isBooked);
+
+        // check at least 1 free slot
+        return sch.slots.some((slot) => !slot.isBooked);
       })
-      .map(sch => sch.date)
+      .map((sch) => sch.date)
       .sort((a, b) => new Date(a) - new Date(b));
 
-    if (!availableDates.length) return res.status(404).json({ message: "No available dates found for this doctor" });
+    if (!availableDates.length)
+      return res.status(404).json({ message: "No available dates found for this doctor" });
 
     res.status(200).json({
       doctor: doctorId,
@@ -211,6 +225,7 @@ export const getDoctorAvailableDates = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
 
   // --------------------
   // 7️⃣ Get all doctors available on a specific date
