@@ -11,6 +11,7 @@ import SuperAdminRouting from "./Routing/SuperAdmin/SuperAdminRouting.js";
 import AdminRouting from "./Routing/Admin/AadminRouting.js";
 import DoctorRouting  from "./Routing/Doctor/DoctorRouiting.js"
 import ReceptionistRouting from "./Routing/Receptionist/ReceptionistRouting.js";
+import VideoCallRouting from "./Routing/VideoCall/VideoCallRouting.js";
 import { initSocket } from "./Sockets/socketServer.js";
 
 dotenv.config();
@@ -60,6 +61,7 @@ app.use("/api/superadmin", SuperAdminRouting);
 app.use("/api/admin", AdminRouting);
 app.use("/api/doctor", DoctorRouting);
 app.use("/api/receptionist", ReceptionistRouting);
+app.use("/api", VideoCallRouting);
 
 //  Connect to MongoDB
 connectDB();
