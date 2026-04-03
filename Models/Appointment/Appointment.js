@@ -64,6 +64,8 @@ const appointmentSchema = new mongoose.Schema(
     },
     reminderSent: { type: Boolean, default: false },
     isFollowUp: { type: Boolean, default: false },
+    startedAt: { type: Date },
+    completedAt: { type: Date },
   },
   { timestamps: true }
 );
