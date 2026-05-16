@@ -9,12 +9,11 @@ let redisClient = null;
  */
 export const initializeRedis = async () => {
   try {
-    const client = redis.createClient({
-      host: process.env.REDIS_HOST || "localhost",
-      port: process.env.REDIS_PORT || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-      db: process.env.REDIS_DB || 0,
-    });
+const client = redis.createClient({
+  url: `redis://${process.env.REDIS_HOST || "redis"}:${
+    process.env.REDIS_PORT || 6379
+  }`,
+});
 
     client.on("error", (err) => {
       logger.error("Redis connection error:", err);
@@ -29,7 +28,9 @@ export const initializeRedis = async () => {
     return client;
   } catch (error) {
     logger.warn("⚠️  Redis connection failed (optional):", error.message);
-    logger.warn("App will work without Redis, but some features will be limited");
+    logger.warn(
+      "App will work without Redis, but some features will be limited",
+    );
     return null;
   }
 };
