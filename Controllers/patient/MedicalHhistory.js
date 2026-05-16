@@ -1,0 +1,647 @@
+import MedicalRecord from "../../Models/MedicalRecord/MedicalRecord.js";
+import userModel from "../../Models/User/UserModels.js";
+import Prescription from "../../Models/prescription/prescription.js";
+import doctorModel from "../../Models/Doctor/DoctorModels.js";
+import Appointment from "../../Models/Appointment/Appointment.js";
+import Payment from "../../Models/Payments/paymentSchema.js";
+import conversationModel from "../../Models/messages/conversationSchema.js";
+
+// ===============================
+// 1️⃣ GET ALL MEDICAL RECORDS (PATIENT) - OPTIMIZED
+// ===============================
+export const patientGetAllMedicalRecords = async (req, res) => {
+  try {
+    const patientId = req.user._id;
+    const page = Math.max(1, parseInt(req.query.page || "1", 10));
+    const limit = Math.max(
+      1,
+      Math.min(50, parseInt(req.query.limit || "20", 10)),
+    ); // Max 50 per page
+    const skip = (page - 1) * limit;
+
+    // Get patient info
+    const patient = await userModel
+      .findById(patientId)
+      .select(
+        "fullName age gender bloodGroup patientType insuranceInfo emergencyContact contact email address profileImage",
+      )
+      .lean();
+    if (!patient) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
+    }
+
+    // ⭐ OPTIMIZED: Parallel queries with .lean() for read-only performance
+    const [records, prescriptions, totalRecords] = await Promise.all([
+      // Get medical records with pagination
+      MedicalRecord.find({ patient: patientId })
+        .populate({
+          path: "doctor",
+          select: "userId department",
+          populate: [
+            {
+              path: "userId",
+              select: "fullName profileImage",
+            },
+            {
+              path: "department",
+              select: "name",
+            },
+          ],
+        })
+        .populate({
+          path: "appointment",
+          select: "appointmentDate reason",
+        })
+        .select(
+          "chiefComplaint symptoms diagnosis vitals labReports notes createdAt appointment doctor",
+        )
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+
+      // Get all prescriptions (for this patient)
+      Prescription.find({ patient: patientId })
+        .populate({
+          path: "doctor",
+          select: "userId department",
+          populate: [
+            {
+              path: "userId",
+              select: "fullName",
+            },
+            {
+              path: "department",
+              select: "name",
+            },
+          ],
+        })
+        .populate({
+          path: "medicalRecord",
+          select: "appointment",
+          populate: {
+            path: "appointment",
+            select: "appointmentDate",
+          },
+        })
+        .sort({ createdAt: -1 })
+        .lean(),
+
+      // Get total count for pagination
+      MedicalRecord.countDocuments({ patient: patientId }),
+    ]);
+
+    // Format prescriptions for frontend
+    const formattedPrescriptions = prescriptions.map((prescription) => {
+      const doctor = prescription.doctor;
+      const doctorName = doctor?.userId?.fullName || "Unknown Doctor";
+      const departmentName = doctor?.department?.name || "Unknown Department";
+      const record = prescription.medicalRecord;
+      const appointment = record?.appointment;
+
+      return {
+        id: prescription._id,
+        date: appointment?.appointmentDate
+          ? new Date(appointment.appointmentDate).toISOString().split("T")[0]
+          : prescription.createdAt
+            ? new Date(prescription.createdAt).toISOString().split("T")[0]
+            : new Date().toISOString().split("T")[0],
+        doctor: `Dr. ${doctorName}`,
+        department: departmentName,
+        medicines: prescription.medicines.map((med) => ({
+          name: med.medicineName,
+          dosage: med.dosage || "",
+          duration: med.duration || "",
+          frequency: med.frequency || "",
+          instructions: med.instructions || "",
+        })),
+        notes: prescription.notes || "",
+      };
+    });
+
+    // Format consultations from medical records
+    const formattedConsultations = records
+      .filter((record) => record.appointment)
+      .map((record) => {
+        const doctor = record.doctor;
+        const doctorName = doctor?.userId?.fullName || "Unknown Doctor";
+        const departmentName = doctor?.department?.name || "Unknown Department";
+        const appointment = record.appointment;
+
+        return {
+          id: record._id,
+          date: appointment?.appointmentDate
+            ? new Date(appointment.appointmentDate).toISOString().split("T")[0]
+            : record.createdAt
+              ? new Date(record.createdAt).toISOString().split("T")[0]
+              : new Date().toISOString().split("T")[0],
+          doctor: `Dr. ${doctorName}`,
+          department: departmentName,
+          reason:
+            record.chiefComplaint ||
+            appointment?.reason ||
+            "General Consultation",
+          notes: record.notes || record.symptoms || "",
+          diagnosis: record.diagnosis || [],
+        };
+      });
+
+    // Format lab reports
+    const formattedLabReports = records
+      .filter((record) => record.labReports && record.labReports.length > 0)
+      .flatMap((record) => {
+        return record.labReports.map((labReport) => ({
+          id: labReport._id || record._id,
+          date: labReport.date
+            ? new Date(labReport.date).toISOString().split("T")[0]
+            : record.createdAt
+              ? new Date(record.createdAt).toISOString().split("T")[0]
+              : new Date().toISOString().split("T")[0],
+          test: labReport.reportType || "Lab Report",
+          file: labReport.fileUrl
+            ? labReport.fileUrl.split("/").pop()
+            : "Report.pdf",
+          url: labReport.fileUrl || "#",
+          type: labReport.fileUrl?.split(".").pop() || "pdf",
+          summary: labReport.summary || "",
+        }));
+      });
+
+    // Get vitals from latest record or patient profile
+    const latestRecord = records[0];
+    const vitals = latestRecord?.vitals || {};
+
+    // Calculate age from DOB
+    const calculateAge = (dob) => {
+      if (!dob) return null;
+      const today = new Date();
+      const birthDate = new Date(dob);
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (
+        monthDiff < 0 ||
+        (monthDiff === 0 && today.getDate() < birthDate.getDate())
+      ) {
+        age--;
+      }
+      return age;
+    };
+
+    // Format patient data for frontend
+    const patientData = {
+      name: patient.fullName || "Unknown",
+      age: patient.age || calculateAge(patient.dob) || null,
+      gender: patient.gender || "Not Specified",
+      bloodGroup: patient.bloodGroup || vitals.bloodGroup || "Not Specified",
+      contact: patient.email || "",
+      phone: patient.contact || "",
+      photo:
+        patient.profileImage ||
+        "https://randomuser.me/api/portraits/men/32.jpg",
+      allergies: patient.allergies || "None",
+      chronic: patient.chronicConditions || "None",
+      height:
+        patient.height || (vitals.height ? parseInt(vitals.height) : null),
+      weight:
+        patient.weight || (vitals.weight ? parseFloat(vitals.weight) : null),
+    };
+
+    return res.json({
+      success: true,
+      page,
+      limit,
+      total: totalRecords,
+      data: {
+        patient: patientData,
+        prescriptions: formattedPrescriptions,
+        consultations: formattedConsultations,
+        labReports: formattedLabReports,
+        vitals: {
+          height:
+            patient.height || (vitals.height ? parseInt(vitals.height) : null),
+          weight:
+            patient.weight ||
+            (vitals.weight ? parseFloat(vitals.weight) : null),
+          bloodGroup: patient.bloodGroup || vitals.bloodGroup || null,
+          bloodPressure: vitals.bloodPressure || null,
+          heartRate: vitals.heartRate || null,
+          temperature: vitals.temperature || null,
+          bloodSugar: vitals.bloodSugar || null,
+          hemoglobin: vitals.hemoglobin || null,
+          spo2: vitals.spo2 || null,
+          glucose: vitals.glucose || null,
+          respiratoryRate: vitals.respiratoryRate || null,
+        },
+      },
+    });
+  } catch (err) {
+    console.error("Error fetching medical records:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ===============================
+// 2️⃣ GET MEDICAL RECORD BY ID (PATIENT)
+// ===============================
+export const patientGetMedicalRecordById = async (req, res) => {
+  try {
+    const patientId = req.user._id;
+    const { id } = req.params;
+
+    const record = await MedicalRecord.findOne({
+      _id: id,
+      patient: patientId,
+    })
+      .populate("doctor")
+      .populate("appointment")
+      .populate("prescription");
+
+    if (!record)
+      return res.status(404).json({ success: false, message: "Not found" });
+
+    return res.json({ success: true, record });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ===============================
+// 3️⃣ DELETE MEDICAL RECORD (PATIENT)
+// ===============================
+export const patientDeleteMedicalRecord = async (req, res) => {
+  try {
+    const patientId = req.user._id;
+    const { id } = req.params;
+
+    const record = await MedicalRecord.findOne({ _id: id, patient: patientId });
+    if (!record)
+      return res
+        .status(404)
+        .json({ success: false, message: "Medical record not found" });
+
+    await record.deleteOne();
+    res.json({ success: true, message: "Medical record deleted" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ===============================
+// 4️⃣ GET PATIENT CONSULTATIONS GROUPED BY DOCTOR (PATIENT)
+// ===============================
+export const patientGetConsultationsByDoctor = async (req, res) => {
+  try {
+    const patientId = req.user._id;
+
+    // ===============================
+    // APPOINTMENTS
+    // ===============================
+    const appointments = await Appointment.find({
+      patient: patientId,
+    })
+      .populate({
+        path: "doctor",
+        populate: [
+          {
+            path: "userId",
+            select: "fullName profileImage",
+          },
+          {
+            path: "department",
+            select: "departmentName",
+          },
+        ],
+      })
+      .sort({ appointmentDate: -1 });
+
+    // ===============================
+    // MEDICAL RECORDS
+    // ===============================
+    const medicalRecords = await MedicalRecord.find({
+      patient: patientId,
+    })
+      .populate({
+        path: "doctor",
+        populate: [
+          {
+            path: "userId",
+            select: "fullName profileImage",
+          },
+          {
+            path: "department",
+            select: "departmentName",
+          },
+        ],
+      })
+      .populate("appointment")
+      .populate("prescription")
+      .sort({ createdAt: -1 });
+
+    // ===============================
+    // PRESCRIPTIONS
+    // ===============================
+    const prescriptions = await Prescription.find({
+      patient: patientId,
+    })
+      .populate({
+        path: "doctor",
+        populate: [
+          {
+            path: "userId",
+            select: "fullName",
+          },
+          {
+            path: "department",
+            select: "departmentName",
+          },
+        ],
+      })
+      .populate({
+        path: "medicalRecord",
+        populate: {
+          path: "appointment",
+        },
+      })
+      .sort({ createdAt: -1 });
+
+    // ===============================
+    // PAYMENTS
+    // ===============================
+    const payments = await Payment.find({
+      patient: patientId,
+    })
+      .populate("appointment")
+      .sort({ createdAt: -1 });
+
+    // ===============================
+    // GROUP BY DOCTOR
+    // ===============================
+    const doctorsMap = new Map();
+
+    medicalRecords.forEach((record) => {
+      if (!record.doctor || !record.appointment) return;
+
+      const doctorId = record.doctor._id.toString();
+
+      const doctor = record.doctor;
+      const appointment = record.appointment;
+      const doctorUserId = doctor.userId;
+
+      // ===============================
+      // CREATE DOCTOR OBJECT
+      // ===============================
+      if (!doctorsMap.has(doctorId)) {
+        doctorsMap.set(doctorId, {
+          id: doctorId,
+          doctorId: doctor._id,
+
+          avatar:
+            doctorUserId?.profileImage ||
+            "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=400&h=400&fit=crop",
+
+          name: `Dr. ${doctorUserId?.fullName || "Unknown"}`,
+
+          department: doctor.department?.departmentName || "Unknown",
+
+          specialization: doctor.specialization || "General",
+
+          rating: 4.8,
+
+          nextAppointment: null,
+
+          medicalHistory: [],
+        });
+      }
+
+      // ===============================
+      // PAYMENT
+      // ===============================
+      const payment = payments.find(
+        (p) => p.appointment?._id?.toString() === appointment._id.toString(),
+      );
+
+      // ===============================
+      // PRESCRIPTION
+      // ===============================
+      const prescription = prescriptions.find(
+        (p) => p.medicalRecord?._id?.toString() === record._id.toString(),
+      );
+
+      let prescriptionText = "";
+
+      if (
+        prescription &&
+        prescription.medicines &&
+        prescription.medicines.length > 0
+      ) {
+        prescriptionText = prescription.medicines
+          .map(
+            (med) =>
+              `${med.medicineName}${med.dosage ? ` (${med.dosage})` : ""}${
+                med.duration ? ` - ${med.duration}` : ""
+              }`,
+          )
+          .join(", ");
+      } else if (prescription?.notes) {
+        prescriptionText = prescription.notes;
+      } else {
+        prescriptionText = "No prescription provided";
+      }
+
+      // ===============================
+      // DIAGNOSIS
+      // ===============================
+      const diagnosis =
+        record.diagnosis && record.diagnosis.length > 0
+          ? record.diagnosis.join(", ")
+          : record.chiefComplaint || "General Consultation";
+
+      // ===============================
+      // DATE
+      // ===============================
+      const appointmentDateObj = appointment.appointmentDate
+        ? new Date(appointment.appointmentDate)
+        : record.createdAt
+          ? new Date(record.createdAt)
+          : new Date();
+
+      const date = appointmentDateObj.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+
+      // ===============================
+      // PUSH HISTORY
+      // ===============================
+      doctorsMap.get(doctorId).medicalHistory.push({
+        date,
+
+        // IMPORTANT
+        consultedAt: appointmentDateObj,
+
+        prescription: prescriptionText,
+
+        payment: {
+          status: payment?.status || "Pending",
+
+          amount: payment?.amount ? `₹${payment.amount}` : "₹0",
+        },
+
+        notes:
+          record.notes ||
+          record.symptoms ||
+          prescription?.notes ||
+          "No notes available",
+
+        diagnosis,
+
+        appointmentId: appointment._id,
+
+        recordId: record._id,
+      });
+    });
+
+    // ===============================
+    // NEXT APPOINTMENTS
+    // ===============================
+    const upcomingAppointments = appointments.filter(
+      (apt) =>
+        apt.status !== "Completed" &&
+        apt.status !== "Cancelled" &&
+        apt.status !== "Missed" &&
+        new Date(apt.appointmentDate) >= new Date(),
+    );
+
+    upcomingAppointments.forEach((appointment) => {
+      if (!appointment.doctor) return;
+
+      const doctorId = appointment.doctor._id.toString();
+
+      if (doctorsMap.has(doctorId)) {
+        const appointmentDate = new Date(appointment.appointmentDate);
+
+        const formattedDate = appointmentDate.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        });
+
+        const formattedTime = appointmentDate.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+
+        const existingNext = doctorsMap.get(doctorId).nextAppointment;
+
+        if (!existingNext) {
+          doctorsMap.get(doctorId).nextAppointment =
+            `${formattedDate} • ${formattedTime}`;
+        }
+      }
+    });
+
+    // ===============================
+    // FINAL ARRAY
+    // ===============================
+const doctorsArray = await Promise.all(
+  Array.from(doctorsMap.values()).map(async (doctor) => {
+
+    const sortedHistory = doctor.medicalHistory.sort(
+      (a, b) =>
+        new Date(b.consultedAt) -
+        new Date(a.consultedAt),
+    );
+
+    // ===============================
+    // CHAT LOGIC
+    // ===============================
+    const latestConsultation =
+      sortedHistory.length > 0
+        ? sortedHistory[0]
+        : null;
+
+    let chatEnabled = false;
+
+    let chatExpiresAt = null;
+
+    if (latestConsultation) {
+
+      const latestDate = new Date(
+        latestConsultation.consultedAt,
+      );
+
+      chatExpiresAt = new Date(
+        latestDate.getTime() +
+          24 * 60 * 60 * 1000,
+      );
+
+      chatEnabled =
+        new Date() < chatExpiresAt;
+    }
+
+    // ===============================
+    // FIND CONVERSATION
+    // ===============================
+    const conversation =
+      await conversationModel.findOne({
+        isGroup: false,
+
+        members: {
+          $all: [patientId, doctor.doctorId],
+        },
+      });
+
+    return {
+      ...doctor,
+
+      // IMPORTANT
+      conversationId:
+        conversation?._id || null,
+
+      medicalHistory: sortedHistory,
+
+      // CHAT
+      chatEnabled,
+
+      chatExpiresAt,
+    };
+  }),
+);
+
+    // ===============================
+    // SORT
+    // ===============================
+    doctorsArray.sort((a, b) => {
+      if (!a.medicalHistory.length) return 1;
+
+      if (!b.medicalHistory.length) return -1;
+
+      return (
+        new Date(b.medicalHistory[0].consultedAt) -
+        new Date(a.medicalHistory[0].consultedAt)
+      );
+    });
+
+    // ===============================
+    // RESPONSE
+    // ===============================
+    const activeDoctors = doctorsArray.filter((doctor) => doctor.chatEnabled);
+    return res.json({
+      success: true,
+
+      data: {
+        doctors: activeDoctors,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
