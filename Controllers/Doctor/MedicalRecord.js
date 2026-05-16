@@ -7,11 +7,19 @@ export const createMedicalRecord = async (req, res) => {
     const doctorUserId = req.user._id;
 
     // 🔥 Get doctorModel ID
-    const doctor = await doctorModel.findOne({ userId: doctorUserId });
-    if (!doctor)
-      return res.status(404).json({ success: false, message: "Doctor not found" });
+    const doctor = await doctorModel.findOne({
+      userId: doctorUserId,
+    });
 
-    const {
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Doctor not found",
+      });
+    }
+
+    // ✅ use let because payment will be modified
+    let {
       appointment,
       patient,
       payment,
@@ -26,35 +34,62 @@ export const createMedicalRecord = async (req, res) => {
       attachments,
     } = req.body;
 
-    if (!appointment || !patient)
+    // ✅ Validation
+    if (!appointment || !patient) {
       return res.status(400).json({
         success: false,
         message: "Appointment & patient are required",
       });
+    }
 
+    // =====================================================
+    // ✅ FIX PAYMENT OBJECT / ARRAY ISSUE
+    // =====================================================
+
+    // if payment comes as array
+    if (Array.isArray(payment)) {
+      payment = payment[0]?._id || payment[0];
+    }
+
+    // if payment comes as object
+    if (typeof payment === "object" && payment !== null) {
+      payment = payment._id;
+    }
+
+    // =====================================================
     // ⭐ Create recordData
+    // =====================================================
+
     const recordData = {
       appointment,
       patient,
-      payment,
-      doctor: doctor._id,   // 🔥 FIXED
+      payment, // ✅ now only ObjectId
+      doctor: doctor._id,
+
       chiefComplaint,
       symptoms,
       diagnosis,
+
       vitals,
-      labTests,
+
+      labTests: labTests || [],
       bloodTests: bloodTests || [],
+
       notes,
       followUpDate,
-      attachments,
+
+      attachments: attachments || [],
     };
 
+    // =====================================================
     // 🩸 Auto blood group save
+    // =====================================================
+
     if (vitals?.bloodGroup) {
       const bloodGroupValue = vitals.bloodGroup;
 
       const hasBloodGroupTest = recordData.bloodTests.some(
-        (t) => t.testName?.toLowerCase() === "blood group"
+        (t) => t.testName?.toLowerCase() === "blood group",
       );
 
       if (!hasBloodGroupTest) {
@@ -67,12 +102,17 @@ export const createMedicalRecord = async (req, res) => {
 
       await userModel.findByIdAndUpdate(
         patient,
-        { bloodGroup: bloodGroupValue },
-        { new: true }
+        {
+          bloodGroup: bloodGroupValue,
+        },
+        { new: true },
       );
     }
 
-    // SAVE MEDICAL RECORD
+    // =====================================================
+    // ✅ SAVE MEDICAL RECORD
+    // =====================================================
+
     const record = await MedicalRecord.create(recordData);
 
     return res.status(201).json({
@@ -82,19 +122,30 @@ export const createMedicalRecord = async (req, res) => {
     });
   } catch (err) {
     console.error("createMedicalRecord Error:", err);
-    return res.status(500).json({ success: false, message: err.message });
+
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
-
 
 export const doctorGetAllMedicalRecords = async (req, res) => {
   try {
     const doctorUserId = req.user._id;
-    const doctor = await doctorModel.findOne({ userId: doctorUserId }).select("_id").lean();
-    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
+    const doctor = await doctorModel
+      .findOne({ userId: doctorUserId })
+      .select("_id")
+      .lean();
+    if (!doctor)
+      return res
+        .status(404)
+        .json({ success: false, message: "Doctor not found" });
 
     const records = await MedicalRecord.find({ doctor: doctor._id })
-      .select("_id appointment patient doctor chiefComplaint diagnosis vitals createdAt")
+      .select(
+        "_id appointment patient doctor chiefComplaint diagnosis vitals createdAt",
+      )
       .populate({ path: "patient", select: "fullName patientId profileImage" })
       .populate({ path: "appointment", select: "appointmentDate timeSlot" })
       .lean();
@@ -109,19 +160,31 @@ export const doctorGetMedicalRecordById = async (req, res) => {
     const doctorUserId = req.user._id;
     const { id } = req.params;
 
-    const doctor = await doctorModel.findOne({ userId: doctorUserId }).select("_id").lean();
-    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
+    const doctor = await doctorModel
+      .findOne({ userId: doctorUserId })
+      .select("_id")
+      .lean();
+    if (!doctor)
+      return res
+        .status(404)
+        .json({ success: false, message: "Doctor not found" });
 
     const record = await MedicalRecord.findById(id)
       .populate({ path: "patient", select: "fullName patientId" })
-      .populate({ path: "appointment", select: "appointmentDate timeSlot reason" })
+      .populate({
+        path: "appointment",
+        select: "appointmentDate timeSlot reason",
+      })
       .populate({ path: "prescription", select: "medicines notes" })
       .lean();
 
-    if (!record) return res.status(404).json({ success: false, message: "Not found" });
+    if (!record)
+      return res.status(404).json({ success: false, message: "Not found" });
 
     if (record.doctor.toString() !== doctor._id.toString())
-      return res.status(403).json({ success: false, message: "Unauthorized doctor" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Unauthorized doctor" });
 
     return res.json({ success: true, record });
   } catch (err) {
@@ -133,14 +196,25 @@ export const updateMedicalRecord = async (req, res) => {
     const doctorUserId = req.user._id;
     const { id } = req.params;
 
-    const doctor = await doctorModel.findOne({ userId: doctorUserId }).select("_id").lean();
-    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
+    const doctor = await doctorModel
+      .findOne({ userId: doctorUserId })
+      .select("_id")
+      .lean();
+    if (!doctor)
+      return res
+        .status(404)
+        .json({ success: false, message: "Doctor not found" });
 
     const record = await MedicalRecord.findById(id);
-    if (!record) return res.status(404).json({ success: false, message: "Record not found" });
+    if (!record)
+      return res
+        .status(404)
+        .json({ success: false, message: "Record not found" });
 
     if (record.doctor.toString() !== doctor._id.toString())
-      return res.status(403).json({ success: false, message: "Unauthorized doctor" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Unauthorized doctor" });
 
     Object.assign(record, req.body);
     await record.save();
@@ -155,14 +229,25 @@ export const deleteMedicalRecord = async (req, res) => {
     const doctorUserId = req.user._id;
     const { id } = req.params;
 
-    const doctor = await doctorModel.findOne({ userId: doctorUserId }).select("_id").lean();
-    if (!doctor) return res.status(404).json({ success: false, message: "Doctor not found" });
+    const doctor = await doctorModel
+      .findOne({ userId: doctorUserId })
+      .select("_id")
+      .lean();
+    if (!doctor)
+      return res
+        .status(404)
+        .json({ success: false, message: "Doctor not found" });
 
     const record = await MedicalRecord.findById(id);
-    if (!record) return res.status(404).json({ success: false, message: "Record not found" });
+    if (!record)
+      return res
+        .status(404)
+        .json({ success: false, message: "Record not found" });
 
     if (record.doctor.toString() !== doctor._id.toString())
-      return res.status(403).json({ success: false, message: "Unauthorized doctor" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Unauthorized doctor" });
 
     await MedicalRecord.findByIdAndDelete(id);
     return res.json({ success: true, message: "Medical record deleted" });
@@ -170,5 +255,3 @@ export const deleteMedicalRecord = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
-
-

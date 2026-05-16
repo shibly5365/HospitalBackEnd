@@ -6,17 +6,67 @@ const messageSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "users",
       required: true,
+      index: true,
     },
-    receiver: {
+
+    conversation: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "users",
+      ref: "conversation",
       required: true,
+      index: true,
     },
-    text: { type: String, required: true },
-    read: { type: Boolean, default: false },
+
+    messageType: {
+      type: String,
+      enum: ["text", "image", "audio", "pdf", "document", "video"],
+      default: "text",
+    },
+
+    text: {
+      type: String,
+      default: "",
+    },
+
+    fileUrl: {
+      type: String,
+      default: null,
+    },
+
+    audioUrl: {
+      type: String,
+      default: null,
+    },
+
+    duration: {
+      type: Number,
+      default: null,
+    },
+
+    readBy: [
+      {
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "users",
+        },
+        readAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+
+    editedAt: Date,
   },
   { timestamps: true }
 );
 
-const MessageModel= mongoose.model("message", messageSchema);
-export default MessageModel
+messageSchema.index({ conversation: 1, createdAt: -1 });
+messageSchema.index({ sender: 1, createdAt: -1 });
+
+const MessageModel = mongoose.model("message", messageSchema);
+export default MessageModel;

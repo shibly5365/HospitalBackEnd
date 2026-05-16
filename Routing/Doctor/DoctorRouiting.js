@@ -16,6 +16,8 @@ import {
 import {
   createSchedule,
   deleteSchedule,
+  doctorWorkingDays,
+  getDoctorAvailability,
   getDoctorSchedules,
   updateSchedule,
 } from "../../Controllers/Doctor/DoctorSchedules.js";
@@ -46,90 +48,129 @@ import {
   getDoctorAllPatients,
   getPatientById,
 } from "../../Controllers/Doctor/getAllPatients.js";
-import { getDashboardSummary } from "../../Controllers/Doctor/DoctorDashboardStatus.js";
+import {
+  getDashboardSummary,
+  getDoctorDashboard,
+} from "../../Controllers/Doctor/DoctorDashboardStatus.js";
 import { createLeaveRequest } from "../../Controllers/Doctor/LeaveRequest.js";
 
 // import { expression } from "joi";
-import { getConversation, sendMessage } from "../../Controllers/Messages/messages.js";
+import {
+  getMessages,
+  getOrCreateConversation,
+  sendMessage,
+} from "../../Controllers/Messages/messages.js";
+import {
+  getAllDoctorPayments,
+  getDoctorStats,
+  getPaymentById,
+  getPaymentMethods,
+  getWeeklyRevenue,
+  refundPayment,
+} from "../../Controllers/Doctor/payments.js";
+import { getDoctorAnalyticsDashboard } from "../../Controllers/Doctor/doctorAnalyticsController.js";
+import { endVideoCall, joinVideoCall } from "../../Controllers/Messages/videoCallController.js";
+import rateLimiterService from "../../Units/rateLimiterService.js";
+import { asyncHandler } from "../../Units/asyncHandler.js";
 
 const DoctorRouting = express.Router();
 
+// Rate limiting middleware for auth endpoints
+const checkAuthLimit = asyncHandler(async (req, res, next) => {
+  const email = req.body.email;
+  if (email) {
+    await rateLimiterService.checkAuthLimit(email);
+  }
+  next();
+});
+
 // Auth
-DoctorRouting.post("/login", LoginValidation, Login);
+DoctorRouting.post("/login", checkAuthLimit, LoginValidation, Login);
 DoctorRouting.post("/logout", AuthMiddleware(["doctor"]), Logout);
 
-
-// Dashboard 
-DoctorRouting.get("/summary",AuthMiddleware(["doctor"]),getDashboardSummary)
-
+// Dashboard
+DoctorRouting.get("/summary", AuthMiddleware(["doctor"]), getDashboardSummary);
+DoctorRouting.get(
+  "/doctorDashbaord",
+  AuthMiddleware(["doctor"]),
+  getDoctorDashboard,
+);
+DoctorRouting.get(
+  "/doctors-working-day",
+  AuthMiddleware(["doctor"]),
+  doctorWorkingDays,
+);
 
 // Appointment
 DoctorRouting.get(
   "/allAppointment",
   AuthMiddleware(["doctor"]),
-  getAllAppointments
+  getAllAppointments,
 );
 DoctorRouting.get(
   "/todyaAppointmen",
   AuthMiddleware(["doctor"]),
-  getTodaysAppointments
+  getTodaysAppointments,
 );
 DoctorRouting.get(
   "/history",
   AuthMiddleware(["doctor"]),
-  getDoctorAppointmentHistory
+  getDoctorAppointmentHistory,
 );
 DoctorRouting.post(
   "/createNextappoint",
   AuthMiddleware(["doctor"]),
-  createNextVisitAppointment
+  createNextVisitAppointment,
 );
 
-
-DoctorRouting.get("/nextAppointment",AuthMiddleware(["doctor"]),getTodaysNextAppointment)
+DoctorRouting.get(
+  "/nextAppointment",
+  AuthMiddleware(["doctor"]),
+  getTodaysNextAppointment,
+);
 DoctorRouting.post(
   "/nextAppointment",
   AuthMiddleware(["doctor"]),
-  createNextVisitAppointment
+  createNextVisitAppointment,
 );
 
 DoctorRouting.get("/app/:id", AuthMiddleware(["doctor"]), getAppointmentById);
 DoctorRouting.get(
   "/appointment/:id",
   AuthMiddleware(["doctor"]),
-  getAppointmentById
+  getAppointmentById,
 );
 DoctorRouting.put(
-  "/statusAppo",
+  "/statusAppo/:id",
   AuthMiddleware(["doctor"]),
-  updateAppointmentStatus
+  updateAppointmentStatus,
 );
 DoctorRouting.put(
   "/reschedule",
   AuthMiddleware(["doctor"]),
-  rescheduleByDoctor
+  rescheduleByDoctor,
 );
 
 // Doctor Schedule
 DoctorRouting.post(
   "/createSchedule",
   AuthMiddleware(["doctor"]),
-  createSchedule
+  createSchedule,
 );
 DoctorRouting.get(
   "/getSchedule",
   AuthMiddleware(["doctor"]),
-  getDoctorSchedules
+  getDoctorSchedules,
 );
 DoctorRouting.put(
   "/updateSchedule",
   AuthMiddleware(["doctor"]),
-  updateSchedule
+  updateSchedule,
 );
 DoctorRouting.delete(
   "/deleteSchedule/:id",
   AuthMiddleware(["doctor"]),
-  deleteSchedule
+  deleteSchedule,
 );
 
 // Consuletion
@@ -144,54 +185,54 @@ DoctorRouting.get("/get/:id", AuthMiddleware(["doctor"]), getConsultationById);
 DoctorRouting.post(
   "/creatingPres",
   AuthMiddleware(["doctor"]),
-  createPrescription
+  createPrescription,
 );
 DoctorRouting.get(
   "/getPres",
   AuthMiddleware(["doctor"]),
-  doctorGetAllPrescriptions
+  doctorGetAllPrescriptions,
 );
 DoctorRouting.get(
   "/getPres/:id",
   AuthMiddleware(["doctor"]),
-  doctorGetPrescriptionById
+  doctorGetPrescriptionById,
 );
 DoctorRouting.put(
   "/updatedPres/:id",
   AuthMiddleware(["doctor"]),
-  updatePrescription
+  updatePrescription,
 );
 DoctorRouting.delete(
   "/deletePres",
   AuthMiddleware(["doctor"]),
-  deletePrescription
+  deletePrescription,
 );
 
 // Medical Record
 DoctorRouting.post(
   "/medi-Creating",
   AuthMiddleware(["doctor"]),
-  createMedicalRecord
+  createMedicalRecord,
 );
 DoctorRouting.get(
   "/medi-get",
   AuthMiddleware(["doctor"]),
-  doctorGetAllMedicalRecords
+  doctorGetAllMedicalRecords,
 );
 DoctorRouting.get(
   "/medi-get/:id",
   AuthMiddleware(["doctor"]),
-  doctorGetMedicalRecordById
+  doctorGetMedicalRecordById,
 );
 DoctorRouting.put(
   "/medi-update",
   AuthMiddleware(["doctor"]),
-  updateMedicalRecord
+  updateMedicalRecord,
 );
 DoctorRouting.delete(
   "/medi-delete",
   AuthMiddleware(["doctor"]),
-  deleteMedicalRecord
+  deleteMedicalRecord,
 );
 
 // Patients
@@ -199,35 +240,93 @@ DoctorRouting.delete(
 DoctorRouting.post(
   "/createPatintes",
   AuthMiddleware(["doctor"]),
-  createPatientByDoctor
+  createPatientByDoctor,
 );
 DoctorRouting.get(
   "/getallPatients",
   AuthMiddleware(["doctor"]),
-  getDoctorAllPatients
+  getDoctorAllPatients,
 );
 DoctorRouting.get(
   "/allPatients/:id",
   AuthMiddleware(["doctor"]),
-  getPatientById
+  getPatientById,
+);
+// availability
+DoctorRouting.get(
+  "/availability",
+  AuthMiddleware(["doctor"]),
+  getDoctorAvailability,
+);
+// Leave Requests
+DoctorRouting.post(
+  "/leave-request",
+  AuthMiddleware(["doctor"]),
+  createLeaveRequest,
 );
 
-
-// Leave Requests
-DoctorRouting.post("/leave-request", AuthMiddleware(["doctor"]), createLeaveRequest);
-
-// 📹 Video Call Routes (doctor)
-
-// Messages
-DoctorRouting.post(
-  "/sendMessage",
+// Payments
+DoctorRouting.get("/stats", AuthMiddleware(["doctor"]), getDoctorStats);
+DoctorRouting.get(
+  "/weekly-revenue",
   AuthMiddleware(["doctor"]),
-  sendMessage
+  getWeeklyRevenue,
 );
 DoctorRouting.get(
-  "/getMessage/:userId",
+  "/payment-methods",
   AuthMiddleware(["doctor"]),
-  getConversation
+  getPaymentMethods,
 );
+DoctorRouting.get(
+  "/getallPayments",
+  AuthMiddleware(["doctor"]),
+  getAllDoctorPayments,
+);
+DoctorRouting.get(
+  "/getallPayments/:id",
+  AuthMiddleware(["doctor"]),
+  getPaymentById,
+);
+
+DoctorRouting.put(
+  "/paymentsUpdate/:id/refund",
+  AuthMiddleware(["doctor"]),
+  refundPayment,
+);
+
+DoctorRouting.get(
+  "/analytics",
+  AuthMiddleware(["doctor"]),
+  getDoctorAnalyticsDashboard,
+);
+
+// 📹 Video Call Routes (doctor)
+DoctorRouting.get(
+  "/appointments/:appointmentId/join-call",
+  AuthMiddleware(["doctor"]),
+  joinVideoCall
+);
+
+// 📞 End call (doctor)
+DoctorRouting.post(
+  "/appointments/end-call",
+  AuthMiddleware(["doctor"]),
+  endVideoCall
+);
+
+// Messages
+DoctorRouting.post("/sendMessage", AuthMiddleware(["doctor"]), sendMessage);
+DoctorRouting.get(
+  "/getMessage/:conversationId",
+  AuthMiddleware(["doctor"]),
+  getMessages,
+);
+DoctorRouting.post(
+  "/getOrCreateConversation",
+  AuthMiddleware(["doctor"]),
+  getOrCreateConversation
+);
+
+
 
 export default DoctorRouting;

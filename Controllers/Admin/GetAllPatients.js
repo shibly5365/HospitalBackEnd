@@ -3,11 +3,12 @@ import Appointment from "../../Models/Appointment/Appointment.js";
 import Payment from "../../Models/Payments/paymentSchema.js";
 import MedicalRecord from "../../Models/MedicalRecord/MedicalRecord.js";
 import Prescription from "../../Models/prescription/prescription.js";
+import mongoose from "mongoose";
 
 const buildVisitHistory = (appointments, medicalRecords) => {
   const history = [];
 
-  appointments.forEach(a => {
+  appointments.forEach((a) => {
     history.push({
       type: "Appointment",
       appointmentId: a._id,
@@ -19,7 +20,7 @@ const buildVisitHistory = (appointments, medicalRecords) => {
     });
   });
 
-  medicalRecords.forEach(m => {
+  medicalRecords.forEach((m) => {
     history.push({
       type: "MedicalRecord",
       recordId: m._id,
@@ -35,17 +36,22 @@ const buildVisitHistory = (appointments, medicalRecords) => {
 
 const calculateSummary = (appointments) => {
   const lastVisit = appointments
-    .filter(a => a.status === "Completed")
-    .sort((a, b) => new Date(b.appointmentDate) - new Date(a.appointmentDate))[0];
+    .filter((a) => a.status === "Completed")
+    .sort(
+      (a, b) => new Date(b.appointmentDate) - new Date(a.appointmentDate),
+    )[0];
 
   const upcoming = appointments
-    .filter(a => ["Pending", "Confirmed"].includes(a.status))
-    .sort((a, b) => new Date(a.appointmentDate) - new Date(b.appointmentDate))[0];
+    .filter((a) => ["Pending", "Confirmed"].includes(a.status))
+    .sort(
+      (a, b) => new Date(a.appointmentDate) - new Date(b.appointmentDate),
+    )[0];
 
-  let onlineVisits = 0, offlineVisits = 0;
+  let onlineVisits = 0,
+    offlineVisits = 0;
   const doctorsMap = {};
 
-  appointments.forEach(a => {
+  appointments.forEach((a) => {
     if (a.consultationType === "Online") onlineVisits++;
     if (a.consultationType === "Offline") offlineVisits++;
 
@@ -58,6 +64,7 @@ const calculateSummary = (appointments) => {
           email: a.doctor.userId?.email,
           specialization: a.doctor.specialization,
           department: a.doctor.department,
+          profileImage: a.doctor.userId?.profileImage || null,
           qualification: a.doctor.qualification,
           experience: a.doctor.experience,
           visits: [],
@@ -78,42 +85,49 @@ const calculateSummary = (appointments) => {
     offlineVisits,
     lastVisitDate: lastVisit?.appointmentDate || null,
     upcomingAppointment: upcoming || null,
-    cancelledCount: appointments.filter(a => a.status === "Cancelled").length,
+    cancelledCount: appointments.filter((a) => a.status === "Cancelled").length,
     doctorsSeen: Object.values(doctorsMap),
-    departmentsVisited: [...new Set(Object.values(doctorsMap).map(d => d.department).filter(Boolean))],
+    departmentsVisited: [
+      ...new Set(
+        Object.values(doctorsMap)
+          .map((d) => d.department)
+          .filter(Boolean),
+      ),
+    ],
   };
 };
 
 export const getAllPatients = async (req, res) => {
   try {
-    const patients = await userModel.find({ role: "patient" })
+    const patients = await userModel
+      .find({ role: "patient" })
       .select("-password -resetToken -verifyOtp");
 
     const appointments = await Appointment.find()
       .populate({
         path: "doctor",
-        select: "specialization department qualification experience consultationFee userId",
+        select:
+          "specialization department qualification experience consultationFee userId",
         populate: [
           { path: "userId", select: "fullName email" },
-          { path: "department", select: "name" }
-        ]
+          { path: "department", select: "name" },
+        ],
       })
       .populate("patient", "fullName email phone age gender patientId address");
 
-    const medicalRecords = await MedicalRecord.find()
-      .populate({
-        path: "doctor",
-        populate: { path: "userId", select: "fullName email" }
-      });
+    const medicalRecords = await MedicalRecord.find().populate({
+      path: "doctor",
+      populate: { path: "userId", select: "fullName email" },
+    });
 
-    const prescriptions = await Prescription.find()
-      .populate({
-        path: "doctor",
-        populate: { path: "userId", select: "fullName email" }
-      });
+    const prescriptions = await Prescription.find().populate({
+      path: "doctor",
+      populate: { path: "userId", select: "fullName email" },
+    });
 
     const payments = await Payment.find();
 
+    // 🔄 Helper: map items by patient
     const mapByPatient = (items) =>
       items.reduce((acc, item) => {
         const pid = item.patient?.toString();
@@ -128,12 +142,26 @@ export const getAllPatients = async (req, res) => {
     const prescMap = mapByPatient(prescriptions);
     const payMap = mapByPatient(payments);
 
-    const result = patients.map(p => {
+    const result = patients.map((p) => {
       const pid = p._id.toString();
+
       const patientAppointments = appMap[pid] || [];
       const patientRecords = recordMap[pid] || [];
       const patientPrescriptions = prescMap[pid] || [];
       const patientPayments = payMap[pid] || [];
+
+      // ✅ Total visits (all appointments)
+      const visitCount = patientAppointments.length;
+
+      // ✅ Only valid visits (real consultations)
+      const validVisits = patientAppointments.filter((app) =>
+        ["Confirmed", "Completed", "With-Doctor"].includes(app.status),
+      );
+      const validVisitCount = validVisits.length;
+
+      // ✅ Patient Type
+      const patientType =
+        validVisitCount === 0 ? "New Patient" : "Returning Patient";
 
       return {
         id: p._id,
@@ -152,6 +180,12 @@ export const getAllPatients = async (req, res) => {
         prescriptions: patientPrescriptions,
         payments: patientPayments,
 
+        // 🔥 NEW FIELDS
+        visitCount,
+        validVisitCount,
+        patientType,
+        isReturningPatient: validVisitCount > 0,
+
         visitHistory: buildVisitHistory(patientAppointments, patientRecords),
         summary: calculateSummary(patientAppointments),
       };
@@ -160,7 +194,10 @@ export const getAllPatients = async (req, res) => {
     res.status(200).json(result);
   } catch (error) {
     console.error("getAllPatients Error:", error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
@@ -168,35 +205,48 @@ export const getPatientById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const patient = await userModel.findById(id)
+    const patient = await userModel
+      .findById(id)
       .select("-password -resetToken -verifyOtp");
 
     if (!patient)
-      return res.status(404).json({ success: false, message: "Patient not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
 
     const appointments = await Appointment.find({ patient: id })
       .populate({
         path: "doctor",
-        select: "specialization department qualification experience consultationFee userId",
+        select:
+          "specialization department qualification experience consultationFee userId",
         populate: [
-          { path: "userId", select: "fullName email" },
-          { path: "department", select: "name" }
-        ]
+          { path: "userId", select: "fullName email profileImage" },
+          { path: "department", select: "name" },
+        ],
       })
-      .populate("patient", "fullName email phone age gender patientId address");
+      .populate(
+        "patient",
+        "fullName email phone age gender patientId address profileImage",
+      );
 
+    const updatedAppointments = appointments.map((appt) => ({
+      ...appt._doc,
+
+      // ✅ ADD THESE TWO
+      patientImage: appt.patient?.profileImage || null,
+      doctorImage: appt.doctor?.userId?.profileImage || null,
+    }));
     const medicalRecords = await MedicalRecord.find({ patient: id })
       .populate({
         path: "doctor",
-        populate: { path: "userId", select: "fullName email" }
+        populate: { path: "userId", select: "fullName email" },
       })
       .populate("prescription");
 
-    const prescriptions = await Prescription.find({ patient: id })
-      .populate({
-        path: "doctor",
-        populate: { path: "userId", select: "fullName email" }
-      });
+    const prescriptions = await Prescription.find({ patient: id }).populate({
+      path: "doctor",
+      populate: { path: "userId", select: "fullName email" },
+    });
 
     const payments = await Payment.find({ patient: id });
 
@@ -211,8 +261,9 @@ export const getPatientById = async (req, res) => {
       patientId: patient.patientId,
       address: patient.address,
       status: patient.status || "active",
+      profileImage: patient.profileImage || null,
 
-      appointments,
+      appointments: updatedAppointments,
       medicalRecords,
       prescriptions,
       payments,
@@ -220,7 +271,6 @@ export const getPatientById = async (req, res) => {
       visitHistory: buildVisitHistory(appointments, medicalRecords),
       summary: calculateSummary(appointments),
     });
-
   } catch (error) {
     console.error("getPatientById error:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -231,6 +281,7 @@ export const deletePatient = async (req, res) => {
   try {
     const { id } = req.params;
 
+
     await Appointment.deleteMany({ patient: id });
     await MedicalRecord.deleteMany({ patient: id });
     await Prescription.deleteMany({ patient: id });
@@ -238,7 +289,9 @@ export const deletePatient = async (req, res) => {
 
     await userModel.findByIdAndDelete(id);
 
-    res.status(200).json({ success: true, message: "Patient deleted successfully" });
+    res
+      .status(200)
+      .json({ success: true, message: "Patient deleted successfully" });
   } catch (error) {
     console.error("deletePatient error:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -251,11 +304,15 @@ export const togglePatientStatus = async (req, res) => {
     const { status } = req.body;
 
     if (!["active", "blocked"].includes(status.toLowerCase()))
-      return res.status(400).json({ success: false, message: "Invalid status" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid status" });
 
     const patient = await userModel.findById(id);
     if (!patient)
-      return res.status(404).json({ success: false, message: "Patient not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
 
     patient.status = status.toLowerCase();
     await patient.save();
@@ -263,10 +320,74 @@ export const togglePatientStatus = async (req, res) => {
     res.status(200).json({
       success: true,
       message: `Patient status updated to ${patient.status}`,
-      patient: { id: patient._id, fullName: patient.fullName, status: patient.status }
+      patient: {
+        id: patient._id,
+        fullName: patient.fullName,
+        status: patient.status,
+      },
     });
   } catch (error) {
     console.error("togglePatientStatus error:", error);
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+export const getDoctorPatients = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const patients = await Appointment.aggregate([
+      {
+        $match: {
+          doctor: new mongoose.Types.ObjectId(id),
+          status: { $ne: "Cancelled" },
+        },
+      },
+
+      {
+        $lookup: {
+          from: "users",
+          localField: "patient",
+          foreignField: "_id",
+          as: "patient",
+        },
+      },
+
+      { $unwind: "$patient" },
+
+      {
+        $group: {
+          _id: "$patient._id",
+
+          // 🔥 BASIC INFO
+          name: { $first: "$patient.fullName" },
+          email: { $first: "$patient.email" },
+          contact: { $first: "$patient.contact" },
+          patientId: { $first: "$patient.patientId" },
+
+          // 🔥 EXTRA INFO (THIS IS WHAT YOU WANT)
+          gender: { $first: "$patient.gender" },
+          age: { $first: "$patient.age" },
+          profileImage: { $first: "$patient.profileImage" },
+
+          // 🔥 VISIT INFO
+          totalVisits: { $sum: 1 },
+          lastVisit: { $max: "$appointmentDate" },
+
+          lastStatus: { $last: "$status" },
+          consultationType: { $last: "$consultationType" },
+        },
+      },
+
+      { $sort: { lastVisit: -1 } },
+    ]);
+
+    res.json({
+      success: true,
+      count: patients.length,
+      data: patients,
+    });
+  } catch (err) {
+    console.error("getDoctorPatients error:", err);
+    res.status(500).json({ success: false });
   }
 };

@@ -45,17 +45,18 @@ export const getPatientDashboardSummary = async (req, res) => {
     let patient = await userModel
       .findById(patientId)
       .select(
-        "fullName age gender bloodGroup patientType insuranceInfo emergencyContact contact email address profileImage"
+        "fullName age gender bloodGroup patientType insuranceInfo emergencyContact contact email address profileImage",
       )
       .lean();
 
     if (!patient)
-      return res.status(404).json({ success: false, message: "Patient not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
 
     // Profile Image
-    patient.profileImage = patient.profileImage
-      ? `${baseUrl}/uploads/patients/${patient.profileImage}`
-      : `${baseUrl}/uploads/defaults/default-patient.png`;
+    patient.profileImage =
+      patient.profileImage || `${baseUrl}/uploads/defaults/default-patient.png`;
 
     // ===============================
     // 2. DATE RANGE
@@ -69,7 +70,7 @@ export const getPatientDashboardSummary = async (req, res) => {
       0,
       0,
       0,
-      0
+      0,
     );
 
     const endOfDay = new Date(
@@ -79,7 +80,7 @@ export const getPatientDashboardSummary = async (req, res) => {
       23,
       59,
       59,
-      999
+      999,
     );
 
     // ===============================

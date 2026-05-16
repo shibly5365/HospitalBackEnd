@@ -4,11 +4,14 @@
 
 import Appointment from "../../Models/Appointment/Appointment.js";
 import doctorModel from "../../Models/Doctor/DoctorModels.js";
+import mongoose from "mongoose";
+import Payment from "../../Models/Payments/paymentSchema.js";
+import userModel from "../../Models/User/UserModels.js";
+import ReviewModel from "../../Models/Receptionist/Receptionist.js";
 
 export const getDashboardSummary = async (req, res) => {
   try {
     const userId = req.user._id; // logged-in user ID
-    // console.log("Logged-in userId:", userId);
 
     // Find the doctor profile linked to this user
     const doctor = await doctorModel.findOne({ userId });
@@ -20,7 +23,6 @@ export const getDashboardSummary = async (req, res) => {
     const appointments = await Appointment.find({
       doctor: doctor._id,
     }).populate("patient", "gender fullName");
-    console.log(appointments);
     
 
     // Calculate unique patients
@@ -83,7 +85,7 @@ appointments.forEach((a) => {
 //   return dt.getTime();
 // };
 
-// // ------------------- Dashboard Summary -------------------
+// ------------------- Dashboard Summary -------------------
 // export const getDashboardSummary = async (req, res) => {
 //   try {
 //     // 🔹 Find doctor
@@ -203,7 +205,7 @@ appointments.forEach((a) => {
 //   }
 // };
 
-// // ------------------- Today's Schedule -------------------
+// ------------------- Today's Schedule -------------------
 // export const getTodaysSchedule = async (req, res) => {
 //   try {
 //     const doctor = await doctorModel.findOne({ userId: req.user._id });
@@ -287,3 +289,140 @@ appointments.forEach((a) => {
 //     res.status(500).json({ error: err.message });
 //   }
 // };
+
+
+
+export const getDoctorDashboard = async (req, res) => {
+  try {
+    const doctorId = req.user._id;
+
+    // 📅 Current month range
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    // ================================
+    // 1. Monthly Consultations
+    // ================================
+    const monthlyConsultations = await Appointment.countDocuments({
+      doctor: doctorId,
+      status: "Completed",
+      completedAt: { $gte: startOfMonth, $lte: endOfMonth },
+    });
+
+    // ================================
+    // 2. Total Earnings (PAID ONLY)
+    // ================================
+    const earningsData = await Payment.aggregate([
+      {
+        $lookup: {
+          from: "appointments",
+          localField: "appointment",
+          foreignField: "_id",
+          as: "appointmentData",
+        },
+      },
+      { $unwind: "$appointmentData" },
+      {
+        $match: {
+          "appointmentData.doctor": new mongoose.Types.ObjectId(doctorId),
+          status: "Paid",
+          createdAt: { $gte: startOfMonth, $lte: endOfMonth },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$amount" },
+        },
+      },
+    ]);
+
+    const totalEarnings = earningsData[0]?.total || 0;
+
+    // ================================
+    // 3. Pending Payments (COUNT + AMOUNT)
+    // ================================
+    const pendingPaymentsData = await Payment.aggregate([
+      {
+        $lookup: {
+          from: "appointments",
+          localField: "appointment",
+          foreignField: "_id",
+          as: "appointmentData",
+        },
+      },
+      { $unwind: "$appointmentData" },
+      {
+        $match: {
+          "appointmentData.doctor": new mongoose.Types.ObjectId(doctorId),
+          status: "Pending",
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalPendingAmount: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const pendingPayments = pendingPaymentsData[0]?.count || 0;
+    const pendingAmount = pendingPaymentsData[0]?.totalPendingAmount || 0;
+
+    // ================================
+    // 4. Total Patients (UNIQUE)
+    // ================================
+    const patients = await Appointment.distinct("patient", {
+      doctor: doctorId,
+    });
+
+    const totalPatients = patients.length;
+
+    // ================================
+    // 5. New Patients (THIS MONTH)
+    // ================================
+    const newPatients = await userModel.countDocuments({
+      role: "patient",
+      createdByDoctor: doctorId,
+      createdAt: { $gte: startOfMonth, $lte: endOfMonth },
+    });
+
+    // ================================
+    // 6. Average Rating
+    // ================================
+    const ratingData = await ReviewModel.aggregate([
+      {
+        $match: {
+          doctor: new mongoose.Types.ObjectId(doctorId),
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          avgRating: { $avg: "$rating" },
+        },
+      },
+    ]);
+
+    const averageRating = ratingData[0]?.avgRating || 0;
+
+    // ================================
+    // FINAL RESPONSE
+    // ================================
+    res.json({
+      monthlyConsultations,
+      totalEarnings,
+      pendingPayments,   // 🔥 count
+      pendingAmount,     // 🔥 money
+      totalPatients,
+      newPatients,
+      averageRating: Number(averageRating.toFixed(1)),
+    });
+
+  } catch (error) {
+    console.error("Dashboard Error:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

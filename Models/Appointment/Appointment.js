@@ -41,8 +41,24 @@ const appointmentSchema = new mongoose.Schema(
         "With-Doctor",
         "Completed",
         "Missed",
-      ], 
+      ],
       default: "Pending",
+    },
+    // 🎥 Video Call Fields
+    videoCallEnabled: {
+      type: Boolean,
+      default: false,
+    },
+
+    videoCallRoomId: {
+      type: String,
+      default: null,
+    },
+
+    videoCallStatus: {
+      type: String,
+      enum: ["pending", "ready", "active", "ended"],
+      default: "pending",
     },
     previousAppointment: {
       type: mongoose.Schema.Types.ObjectId,
@@ -67,7 +83,7 @@ const appointmentSchema = new mongoose.Schema(
     startedAt: { type: Date },
     completedAt: { type: Date },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // ⭐ Performance Indexes

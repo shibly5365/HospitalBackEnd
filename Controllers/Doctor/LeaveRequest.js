@@ -5,66 +5,105 @@ import Appointment from "../../Models/Appointment/Appointment.js";
 import moment from "moment";
 
 const blockDoctorScheduleForLeave = async (doctorId, startDate, endDate) => {
-  const start = moment(startDate);
-  const end = moment(endDate);
+  const start = moment(startDate).startOf("day").toDate();
+  const end = moment(endDate).endOf("day").toDate();
 
-  while (start <= end) {
-    const date = start.format("YYYY-MM-DD");
-
-    await DoctorSchedule.updateMany(
-      {
-        doctor: doctorId,
-        date: date,
-      },
-      { $set: { isAvailable: false } }
-    );
-
-    start.add(1, "day");
-  }
+  await DoctorSchedule.updateMany(
+    {
+      doctor: doctorId,
+      date: { $gte: start, $lte: end },
+    },
+    { $set: { isLeaveDay: true } },
+  );
 };
 
 const cancelAppointmentsDuringLeave = async (doctorId, startDate, endDate) => {
   await Appointment.updateMany(
     {
       doctor: doctorId,
-      date: {
-        $gte: startDate,
-        $lte: endDate,
+      appointmentDate: {
+        $gte: moment(startDate).startOf("day").toDate(),
+        $lte: moment(endDate).endOf("day").toDate(),
       },
+      status: { $in: ["Pending", "Confirmed"] },
     },
     {
-      $set: { status: "cancelled_by_hospital" },
-    }
+      $set: { status: "Cancelled", notes: "Cancelled due to approved leave" },
+    },
   );
 };
 
 export const createLeaveRequest = async (req, res) => {
   try {
-    const doctor = req.user.id; // from auth middleware
+    const doctorData = await doctorModel.findOne({ userId: req.user._id });
 
-    let { startDate, endDate, type, description, duration } = req.body;
+    if (!doctorData) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Doctor not found" });
+    }
+
+    const doctor = doctorData._id;
+
+    let {
+      startDate,
+      endDate,
+      type,
+      description,
+      durationType,
+      duration,
+      startTime,
+      endTime,
+    } = req.body;
+
+    durationType = durationType || duration || "Full Day";
 
     if (!endDate) endDate = startDate; // single-day leave
 
     // Validation
-    if (!startDate || !type || !description || !duration) {
+    if (!startDate || !type || !description || !durationType) {
       return res.status(400).json({
         success: false,
-        message: "All fields required: startDate, type, description, duration",
+        message:
+          "All fields required: startDate, type, description, durationType",
       });
     }
 
-    if (!["sick", "casual"].includes(type.toLowerCase())) {
+    if (
+      !["sick", "casual", "emergency", "personal"].includes(type.toLowerCase())
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid leave type",
       });
     }
 
-    if (!["Full Day", "Half Day"].includes(duration)) {
+    if (
+      ![
+        "Full Day",
+        "Half Day - Morning",
+        "Half Day - Afternoon",
+        "Hourly",
+      ].includes(durationType)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid duration (Full Day / Half Day only)",
+        message:
+          "Invalid durationType (Full Day / Half Day - Morning / Half Day - Afternoon / Hourly)",
+      });
+    }
+
+    const existing = await DoctorLeave.findOne({
+      doctor,
+      status: { $in: ["pending", "approved"] },
+      startDate: { $lte: moment(endDate).endOf("day").toDate() },
+      endDate: { $gte: moment(startDate).startOf("day").toDate() },
+    });
+
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: "Leave already requested for this date",
       });
     }
 
@@ -74,7 +113,9 @@ export const createLeaveRequest = async (req, res) => {
       endDate,
       type: type.toLowerCase(),
       description,
-      duration,
+      durationType,
+      startTime,
+      endTime,
       status: "pending", // default
     });
 
@@ -94,19 +135,40 @@ export const createLeaveRequest = async (req, res) => {
 
 export const getDoctorLeaves = async (req, res) => {
   try {
-    const { doctorId } = req.params;
+    const { id } = req.params;
 
-    const leaves = await DoctorLeave.find({ doctor: doctorId });
+    const leaves = await DoctorLeave.find({ doctor: id })
+      .sort({ startDate: -1 })
+      .lean();
 
-    res.status(200).json({
+    // 🔹 Split data
+    const pendingLeaves = leaves.filter((l) => l.status === "pending");
+    const approvedLeaves = leaves.filter((l) => l.status === "approved");
+    const rejectedLeaves = leaves.filter((l) => l.status === "rejected");
+
+    // 🔹 Stats
+    const totalLeaves = leaves.length;
+    const totalApproved = approvedLeaves.length;
+    const totalRejected = rejectedLeaves.length;
+    const totalPending = pendingLeaves.length;
+
+    // 🔹 Format response (clean for frontend)
+    res.json({
       success: true,
-      leaves,
+
+      stats: {
+        totalLeaves,
+        totalApproved,
+        totalRejected,
+        totalPending,
+      },
+
+      pending: pendingLeaves,
+      history: leaves, // full history (or use only approved + rejected if you want)
     });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+  } catch (err) {
+    console.error("getDoctorLeaves error:", err);
+    res.status(500).json({ success: false });
   }
 };
 
@@ -129,12 +191,22 @@ export const approveLeave = async (req, res) => {
     await blockDoctorScheduleForLeave(
       leave.doctor,
       leave.startDate,
-      leave.endDate
+      leave.endDate,
+    );
+    await DoctorSchedule.updateMany(
+      {
+        doctor: leave.doctor,
+        date: {
+          $gte: moment(leave.startDate).startOf("day").toDate(),
+          $lte: moment(leave.endDate).endOf("day").toDate(),
+        },
+      },
+      { $set: { leaveRef: leave._id } },
     );
     await cancelAppointmentsDuringLeave(
       leave.doctor,
       leave.startDate,
-      leave.endDate
+      leave.endDate,
     );
 
     res.status(200).json({
@@ -173,6 +245,67 @@ export const rejectLeave = async (req, res) => {
     });
   } catch (error) {
     console.error("rejectLeave error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getAllLeaveRequests = async (req, res) => {
+  try {
+    const leaves = await DoctorLeave.find({
+      status: { $in: ["pending", "approved"] },
+    })
+      .populate({
+        path: "doctor",
+        populate: {
+          path: "userId",
+          model: "users",
+          select: "fullName email",
+        },
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // 🔥 Format for frontend
+    const formattedLeaves = leaves.map((l) => ({
+      id: l._id,
+
+      // ✅ Correct name from User model
+      staffName: l.doctor?.userId?.fullName || "Doctor",
+
+      role: "Doctor",
+
+      // ✅ Clean date format
+      startDate: moment(l.startDate).format("YYYY-MM-DD"),
+      endDate: moment(l.endDate).format("YYYY-MM-DD"),
+
+      leaveType: l.type,
+      reason: l.description,
+      status: l.status,
+    }));
+
+    // 🔹 Separate data
+    const pending = formattedLeaves.filter((l) => l.status === "pending");
+    const approved = formattedLeaves.filter((l) => l.status === "approved");
+
+    // 🔹 Stats
+    const stats = {
+      total: formattedLeaves.length,
+      pending: pending.length,
+      approved: approved.length,
+    };
+
+    return res.status(200).json({
+      success: true,
+      stats,
+      pending,
+      approved,
+      requests: formattedLeaves, // 🔥 frontend friendly
+    });
+  } catch (error) {
+    console.error("getAllLeaveRequests error:", error);
     res.status(500).json({
       success: false,
       message: error.message,

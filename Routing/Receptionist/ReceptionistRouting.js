@@ -63,11 +63,22 @@ import {
   getDoctorsAvailableToday,
   isDoctorAvailable,
 } from "../../Controllers/Receptionist/doctorAvailable.js";
+import rateLimiterService from "../../Units/rateLimiterService.js";
+import { asyncHandler } from "../../Units/asyncHandler.js";
 
 const ReceptionistRouting = express.Router();
 
+// Rate limiting middleware for auth endpoints
+const checkAuthLimit = asyncHandler(async (req, res, next) => {
+  const email = req.body.email;
+  if (email) {
+    await rateLimiterService.checkAuthLimit(email);
+  }
+  next();
+});
+
 // login
-ReceptionistRouting.post("/receptionist-login", LoginValidation, Login);
+ReceptionistRouting.post("/receptionist-login", checkAuthLimit, LoginValidation, Login);
 ReceptionistRouting.post(
   "/signup",
   SignUpValidation,

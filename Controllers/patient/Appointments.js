@@ -1,6 +1,7 @@
 import Appointment from "../../Models/Appointment/Appointment.js";
 import doctorModel from "../../Models/Doctor/DoctorModels.js";
 import DoctorSchedule from "../../Models/Doctor/ScheduleSchema.js";
+import mongoose from "mongoose";
 import Payment from "../../Models/Payments/paymentSchema.js";
 import userModel from "../../Models/User/UserModels.js";
 
@@ -8,10 +9,13 @@ import userModel from "../../Models/User/UserModels.js";
 // 1️⃣ CREATE APPOINTMENT (PATIENT)
 
 // ===============================
+
 export const patientCreateAppointment = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const patientId = req.user._id;
-
     const doctorId = req.body.doctor || req.body.doctorId;
 
     const {
@@ -22,33 +26,17 @@ export const patientCreateAppointment = async (req, res) => {
       paymentMethod,
     } = req.body;
 
-    if (!paymentMethod)
-      return res.status(400).json({
-        success: false,
-        message: "Please select a payment method before booking appointment",
-      });
-
-    if (!doctorId)
-      return res.status(400).json({
-        success: false,
-        message: "Doctor ID is required",
-      });
+    if (!paymentMethod) {
+      throw new Error("Payment method is required");
+    }
 
     const doctorDoc = await doctorModel.findById(doctorId);
-    if (!doctorDoc)
-      return res.status(404).json({
-        success: false,
-        message: "Doctor not found",
-      });
+    if (!doctorDoc) throw new Error("Doctor not found");
 
     const user = await userModel.findById(patientId);
-    if (!user)
-      return res.status(404).json({
-        success: false,
-        message: "Patient not found",
-      });
+    if (!user) throw new Error("Patient not found");
 
-    // 🔥 Slot Blocking Check (Pending / Confirmed / With-Doctor)
+    // 🔒 Slot check
     const overlapping = await Appointment.findOne({
       doctor: doctorId,
       appointmentDate,
@@ -58,85 +46,104 @@ export const patientCreateAppointment = async (req, res) => {
     });
 
     if (overlapping) {
-      return res.status(400).json({
-        success: false,
-        message: "Slot already booked",
-      });
+      throw new Error("Slot already booked");
     }
 
-    // Calculate Fee
+    // 💰 Fee Calculation
     let finalFee = doctorDoc.consultationFee;
     if (consultationType?.toLowerCase() === "online") {
       finalFee += 300;
     }
-
-    // Create Appointment
-    let appointment;
-    try {
-      appointment = await Appointment.create({
-        patient: patientId,
-        doctor: doctorId,
-        appointmentDate,
-        timeSlot,
-        consultationType,
-        reason,
-
-        patientDetails: {
-          fullName: user.fullName,
-          dob: user.dob,
-          age: user.age,
-          gender: user.gender,
-          email: user.email,
-          phone: user.contact,
-          address: {
-            street: user.address?.street,
-            city: user.address?.city,
-            state: user.address?.state,
-            zip: user.address?.zip,
-          },
-          emergencyContact: {
-            name: user.emergencyContact?.name,
-            phone: user.emergencyContact?.number,
-          },
-          insuranceInfo: user.insuranceInfo,
-        },
-
-        consultationFee: finalFee,
-        paymentStatus: "Pending",
-        status: "Pending",
-      });
-    } catch (err) {
-      // 🔥 If two patients click "book" at same millisecond → handle duplicate slot creation
-      if (err.code === 11000) {
-        return res.status(409).json({
-          success: false,
-          message: "Slot already booked. Please try another time.",
-        });
-      }
-      throw err;
-    }
-
-    // Create Payment Document
-    const payment = await Payment.create({
-      appointment: appointment._id,
+    // 🧠 Check if patient already booked before
+    const existingAppointment = await Appointment.findOne({
       patient: patientId,
-      doctor: doctorId,
-      method: paymentMethod,
-      amount: finalFee,
-      status: "Pending",
+      status: { $in: ["Confirmed", "Completed", "With-Doctor"] },
     });
 
-    appointment.payments.push(payment._id);
-    await appointment.save();
+    // 🎯 Decide patient type
+    let patientType = "New Patient";
+    if (existingAppointment) {
+      patientType = "Returning Patient";
+    }
+
+    // 🧾 Create Appointment
+    const appointment = await Appointment.create(
+      [
+        {
+          patient: patientId,
+          doctor: doctorId,
+          appointmentDate,
+          timeSlot,
+          consultationType,
+          reason,
+          patientType,
+
+          patientDetails: {
+            fullName: user.fullName,
+            gender: user.gender,
+            email: user.email,
+            phone: user.contact,
+          },
+
+          consultationFee: finalFee,
+          paymentStatus: "Pending",
+          status: "Pending",
+        },
+      ],
+      { session },
+    );
+
+    // 🔢 Generate Payment ID
+    const count = await Payment.countDocuments();
+    const paymentId = `PAY-${new Date().getFullYear()}-${(count + 1)
+      .toString()
+      .padStart(3, "0")}`;
+
+    // 🧾 Create Payment
+    const payment = await Payment.create(
+      [
+        {
+          paymentId,
+          appointment: appointment[0]._id,
+          patient: patientId,
+          doctor: doctorId,
+          method: paymentMethod,
+          amount: finalFee,
+          type: "Consultation",
+          status: "Pending",
+
+          items: [
+            {
+              title: "Consultation Fee",
+              amount: doctorDoc.consultationFee,
+            },
+            ...(consultationType === "online"
+              ? [{ title: "Online Charge", amount: 300 }]
+              : []),
+          ],
+        },
+      ],
+      { session },
+    );
+
+    // 🔗 Link payment to appointment
+    appointment[0].payments = [payment[0]._id];
+    await appointment[0].save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
 
     return res.status(201).json({
       success: true,
       message: "Appointment & Payment created successfully",
-      appointment,
-      payment,
+      appointment: appointment[0],
+      payment: payment[0],
     });
   } catch (error) {
-    return res.status(500).json({
+    await session.abortTransaction();
+    session.endSession();
+
+    return res.status(400).json({
       success: false,
       message: error.message,
     });
@@ -189,7 +196,6 @@ export const getAppointmentById = async (req, res) => {
   }
 };
 
-
 // ===============================
 // 4️⃣ UPDATE / RESCHEDULE APPOINTMENT (PATIENT)
 // ===============================
@@ -218,7 +224,7 @@ export const updateAppointment = async (req, res) => {
       .trim(); // e.g. "Thu"
 
     const doctorDays = doctor.availableDays.map(
-      (d) => d.trim().slice(0, 3) // normalize to "Mon"
+      (d) => d.trim().slice(0, 3), // normalize to "Mon"
     );
 
     if (!doctorDays.includes(dayName)) {
@@ -273,7 +279,6 @@ export const patientCancelAppointment = async (req, res) => {
     // 1️⃣ Find appointment
     const appointment = await Appointment.findById(id);
 
-    
     if (!appointment) {
       return res.status(404).json({
         success: false,
@@ -320,7 +325,7 @@ export const patientCancelAppointment = async (req, res) => {
             "elem.end": appointment.timeSlot.end,
           },
         ],
-      }
+      },
     );
 
     // 7️⃣ Optional safety log
@@ -333,7 +338,7 @@ export const patientCancelAppointment = async (req, res) => {
     }
 
     console.log(scheduleDate);
-    
+
     // 8️⃣ Refund if payment was completed
     if (appointment.paymentStatus === "Paid") {
       const payment = await Payment.findOne({
@@ -367,7 +372,6 @@ export const patientCancelAppointment = async (req, res) => {
     });
   }
 };
-
 
 // ===============================
 // 6️⃣ DELETE APPOINTMENT (PATIENT CAN DELETE CANCELLED/REJECTED)
@@ -524,5 +528,3 @@ export const getTodayPatientAppointments = async (req, res) => {
     });
   }
 };
-
-

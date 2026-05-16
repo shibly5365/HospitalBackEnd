@@ -33,6 +33,10 @@ const doctorSchema = new mongoose.Schema(
         end: String,
       },
     ],
+    isHead: {
+      type: Boolean,
+      default: false,
+    },
 
     // ⭐ Appointment duration
     duration: {
@@ -57,7 +61,7 @@ const doctorSchema = new mongoose.Schema(
       default: "available",
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // ⭐ Performance Indexes

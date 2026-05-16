@@ -15,7 +15,7 @@ import {
 import { upload } from "../../Config/multer.js";
 import { LoginValidation } from "../../Middleware/AuthValidaction.js";
 import {
-  getConversation,
+  getMessages,
   sendMessage,
 } from "../../Controllers/Messages/messages.js";
 import { Login, Logout } from "../../Controllers/Auth/Units/AuthControllers.js";
@@ -88,7 +88,7 @@ SuperAdminRouting.post(
 SuperAdminRouting.get(
   "/conversation/:userId",
   AuthMiddleware(["superAdmin", "admin", "doctor", "receptionist", "patient"]),
-  getConversation
+  getMessages
 );
 
 export default SuperAdminRouting;
