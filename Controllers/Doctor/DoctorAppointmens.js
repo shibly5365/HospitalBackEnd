@@ -296,14 +296,10 @@ export const updateAppointmentStatus = async (req, res) => {
     const appointmentId = req.params.id;
     const { status, notes } = req.body;
 
-    console.log("appointmentId:", appointmentId);
-
     if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId))
       return res
         .status(400)
         .json({ success: false, message: "Invalid appointmentId" });
-    console.log(appointmentId);
-
     const allowedStatuses = [
       "Confirmed",
       "Cancelled",
@@ -339,10 +335,29 @@ export const updateAppointmentStatus = async (req, res) => {
     }
 
     // ✅ Confirmed
-    console.log(appointment);
 
     if (status === "Confirmed" && !appointment.tokenNumber) {
       appointment.status = "Confirmed"; // ADD THIS
+      await DoctorSchedule.updateOne(
+        {
+          doctor: appointment.doctor,
+          date: appointment.appointmentDate,
+        },
+        {
+          $set: {
+            "slots.$[elem].isBooked": true,
+          },
+        },
+        {
+          arrayFilters: [
+            {
+              "elem.start": appointment.timeSlot.start,
+              "elem.end": appointment.timeSlot.end,
+            },
+          ],
+          session,
+        },
+      );
 
       const dayStart = moment
         .utc(appointment.appointmentDate)

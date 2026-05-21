@@ -46,7 +46,7 @@ const checkPasswordResetLimit = asyncHandler(async (req, res, next) => {
 routing.post("/login", checkAuthLimit, LoginValidation, Login);
 routing.post("/logout", Logout);
 routing.post("/refresh-token", RefreshToken);
-routing.get("/me", AuthMiddleware(["admin", "patient", "doctor"]), getMe);
+routing.get("/me", AuthMiddleware(["admin", "patient", "doctor","receptionist"]), getMe);
 routing.put(
   "/update-profile",
   AuthMiddleware(["admin", "patient", "doctor"]),

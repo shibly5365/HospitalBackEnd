@@ -63,6 +63,7 @@ import {
   getAllLeaveRequests,
   getDoctorLeaves,
 } from "../../Controllers/Doctor/LeaveRequest.js";
+import { toggleUserStatus } from "../../Controllers/Admin/toggleUsers.js";
 
 const AdminRouting = express.Router();
 
@@ -283,9 +284,20 @@ AdminRouting.delete(
   deleteDepartment,
 );
 
+// TogelUseres
+AdminRouting.patch(
+  "/toggle/:userId",
+  AuthMiddleware(["admin"]),
+  toggleUserStatus,
+);
+
 // OverView
 AdminRouting.get("/overView", AuthMiddleware(["admin"]), getAdminOverview);
-AdminRouting.get("/adminAnalytics", AuthMiddleware(["admin"]), getAdminAnalytics);
+AdminRouting.get(
+  "/adminAnalytics",
+  AuthMiddleware(["admin"]),
+  getAdminAnalytics,
+);
 
 // leave Reqeust
 

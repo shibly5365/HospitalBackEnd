@@ -76,7 +76,7 @@ const appointmentSchema = new mongoose.Schema(
     duration: { type: Number, default: 30 },
     medicalRecord: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "medicalRecords",
+      ref: "medicalRecord",
     },
     reminderSent: { type: Boolean, default: false },
     isFollowUp: { type: Boolean, default: false },

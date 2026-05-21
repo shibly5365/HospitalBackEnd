@@ -1,10 +1,10 @@
 import userModel from "../../Models/User/UserModels.js";
 import doctorModel from "../../Models/Doctor/DoctorModels.js";
-import Appointment from "../../models/Appointment/Appointment.js";
-import Payment from "../../models/Payments/paymentSchema.js";
 import DoctorLeave from "../../Models/LeaveRequest/leaveSchema.js";
 import DoctorSchedule from "../../Models/Doctor/ScheduleSchema.js";
 import moment from "moment";
+import Appointment from "../../Models/Appointment/Appointment.js";
+import Payment from "../../Models/Payments/paymentSchema.js";
 
 export const getAdminDashboardCounts = async (req, res) => {
   try {

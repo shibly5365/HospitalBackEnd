@@ -47,7 +47,7 @@ app.use(
     origin: FRONTEND_URL,
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT","PATCH", "DELETE", "OPTIONS"],
     maxAge: 600, // 10 minutes
   }),
 );
@@ -117,7 +117,7 @@ app.use(globalErrorHandler);
 // ✅ Start Server
 const PORT = process.env.PORT || 4002;
 
-server.listen(PORT, () => {
+server.listen(PORT,"0.0.0.0", () => {
   logger.info(`✅ Server running on port ${PORT}`);
   logger.info(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
   console.log(`✅ Server running on port ${PORT}`);

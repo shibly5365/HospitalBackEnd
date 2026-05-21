@@ -39,6 +39,29 @@ const userSchema = new mongoose.Schema(
         return this.role === "patient";
       },
     },
+    // ✅ Account control
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+
+    accountStatus: {
+      type: String,
+      enum: ["active", "inactive", "suspended", "blocked"],
+      default: "active",
+    },
+
+    blockedAt: {
+      type: Date,
+      default: null,
+    },
+
+    blockedReason: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: "",
+    },
     dob: {
       type: Date,
     },
@@ -83,7 +106,6 @@ const userSchema = new mongoose.Schema(
     weight: {
       type: Number, // in kg
     },
-    isBlocked: { type: Boolean, default: false },
     // Email verification
     verifyOtp: {
       type: String,
@@ -115,7 +137,7 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // ⭐ Performance Indexes
@@ -123,7 +145,9 @@ userSchema.index({ email: 1 }); // Already unique, but explicit for query optimi
 userSchema.index({ role: 1 }); // Fast filtering by user role
 userSchema.index({ patientId: 1, sparse: true }); // Sparse index for patient lookup
 userSchema.index({ createdAt: -1 }); // For sorting by creation date
-userSchema.index({ isBlocked: 1, role: 1 }); // Compound index for patient queries
+userSchema.index({ isActive: 1 });
+userSchema.index({ accountStatus: 1 });
+userSchema.index({ role: 1, accountStatus: 1 });
 userSchema.index({ isAccountVerified: 1 }); // For filtering verified/unverified users
 
 userSchema.pre("save", generatePatientId);

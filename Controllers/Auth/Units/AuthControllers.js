@@ -9,12 +9,23 @@ import { uploadToCloudinary } from "../../../Units/uploadToCloudinary.js";
 import rateLimiterService from "../../../Units/rateLimiterService.js";
 import tokenService from "../../../Units/tokenService.js";
 import redisService from "../../../Units/redisService.js";
-import { ValidationError, AuthenticationError } from "../../../Units/ApiError.js";
+import {
+  ValidationError,
+  AuthenticationError,
+} from "../../../Units/ApiError.js";
 import logger from "../../../Config/logger.js";
 
 export const SignUp = async (req, res) => {
   try {
-    const { fullName, email, password, contact, age, gender ,role = "patient"} = req.body;
+    const {
+      fullName,
+      email,
+      password,
+      contact,
+      age,
+      gender,
+      role = "patient",
+    } = req.body;
 
     const existingUser = await userModel.findOne({ email });
     if (existingUser) {
@@ -27,10 +38,10 @@ export const SignUp = async (req, res) => {
     // Validate password strength
     const passwordSchema = Joi.string()
       .min(12)
-      .pattern(/[A-Z]/, 'uppercase')
-      .pattern(/[a-z]/, 'lowercase')
-      .pattern(/[0-9]/, 'number')
-      .pattern(/[!@#$%^&*(),.?":{}|<>]/, 'special character')
+      .pattern(/[A-Z]/, "uppercase")
+      .pattern(/[a-z]/, "lowercase")
+      .pattern(/[0-9]/, "number")
+      .pattern(/[!@#$%^&*(),.?":{}|<>]/, "special character")
       .required();
 
     const { error } = passwordSchema.validate(password);
@@ -107,7 +118,10 @@ export const SignUp = async (req, res) => {
       success: true,
     });
   } catch (error) {
-    logger.error("Signup error", { error: error.message, email: req.body.email });
+    logger.error("Signup error", {
+      error: error.message,
+      email: req.body.email,
+    });
     res.status(500).json({
       message: "Signup failed",
       success: false,
@@ -119,7 +133,7 @@ export const VerifyOtp = async (req, res) => {
     const { email, otp } = req.body;
 
     const tempUser = await redisService.get(`signup:${email}`);
-    
+
     if (!tempUser) {
       return res.status(400).json({
         message: "No signup request found",
@@ -157,7 +171,6 @@ export const VerifyOtp = async (req, res) => {
       isAccountVerified: true,
     });
 
-
     await newUser.save();
 
     // 🔥 CLEANUP
@@ -168,7 +181,10 @@ export const VerifyOtp = async (req, res) => {
       success: true,
     });
   } catch (error) {
-    logger.error("OTP verification error", { error: error.message, email: req.body.email });
+    logger.error("OTP verification error", {
+      error: error.message,
+      email: req.body.email,
+    });
     res.status(500).json({
       message: "Verification failed",
       success: false,
@@ -198,19 +214,42 @@ export const Login = async (req, res) => {
       logger.warn("Login attempt with non-existent email", { email });
       return res.status(403).json({ message: errMsg, success: false });
     }
+    if (!user.isActive || user.accountStatus !== "active") {
+      logger.warn("Blocked login attempt", {
+        userId: user._id,
+        status: user.accountStatus,
+      });
 
-    if (user.role === "patient") {
-      if (!user.isAccountVerified) {
-        return res.status(403).json({
-          message: "Please verify your email before login",
-          success: false,
-        });
-      }
+      return res.status(403).json({
+        success: false,
+        message: `Account ${user.accountStatus}`,
+      });
+    }
+
+    if (user.role === "patient" && !user.isAccountVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Please verify your email before login",
+      });
+    }
+    if (!user.password) {
+      return res.status(403).json({
+        success: false,
+        message: "Password login not available for this account",
+      });
     }
 
     const isPasswordEqual = await bcrypt.compare(password, user.password);
+
     if (!isPasswordEqual) {
-      return res.status(403).json({ message: errMsg, success: false });
+      logger.warn("Invalid password attempt", {
+        email,
+      });
+
+      return res.status(401).json({
+        success: false,
+        message: errMsg,
+      });
     }
 
     // Use TokenService for both access and refresh tokens
@@ -231,7 +270,7 @@ export const Login = async (req, res) => {
     await redisService.set(
       `refreshToken:${user._id}`,
       { token: tokens.refreshToken },
-      7 * 24 * 60 * 60
+      7 * 24 * 60 * 60,
     );
 
     const isProduction = process.env.NODE_ENV === "production";
@@ -240,7 +279,7 @@ export const Login = async (req, res) => {
     res.cookie("accessToken", tokens.accessToken, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: "Strict",
+      sameSite: isProduction ? "None" : "Lax",
       maxAge: 15 * 60 * 1000,
     });
 
@@ -280,13 +319,15 @@ export const Login = async (req, res) => {
     if (user.role === "receptionist") {
       userResponse.employeeId = user.employeeId; // <-- make sure this field exists in User schema
     }
+    user.lastLoginAt = new Date();
+    await user.save();
 
     return res.status(200).json({
       success: true,
       message: "Login success",
-      jwtToken,  // For backward compatibility
-      accessToken: tokens.accessToken,  // New
-      refreshToken: tokens.refreshToken,  // New
+      jwtToken, // For backward compatibility
+      accessToken: tokens.accessToken, // New
+      refreshToken: tokens.refreshToken, // New
       user: userResponse,
     });
   } catch (err) {
@@ -414,7 +455,9 @@ export const RefreshToken = async (req, res) => {
     }
 
     // Check if token is still valid in Redis
-    const storedToken = await redisService.get(`refreshToken:${payload.userId}`);
+    const storedToken = await redisService.get(
+      `refreshToken:${payload.userId}`,
+    );
     if (!storedToken || storedToken.token !== refreshToken) {
       return res.status(401).json({
         message: "Refresh token has been revoked",
@@ -433,7 +476,7 @@ export const RefreshToken = async (req, res) => {
     await redisService.set(
       `refreshToken:${payload.userId}`,
       { token: newTokens.refreshToken },
-      7 * 24 * 60 * 60
+      7 * 24 * 60 * 60,
     );
 
     const isProduction = process.env.NODE_ENV === "production";
