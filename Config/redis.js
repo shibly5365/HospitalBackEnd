@@ -9,9 +9,13 @@ let redisClient = null;
  */
 export const initializeRedis = async () => {
   try {
-const client = redis.createClient({
-  url: process.env.REDIS_URL,
-});
+    const client = redis.createClient({
+      url: process.env.REDIS_URL,
+      socket: {
+        tls: true,
+        rejectUnauthorized: false,
+      },
+    });
 
     client.on("error", (err) => {
       logger.error("Redis connection error:", err);
