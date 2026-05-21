@@ -276,28 +276,26 @@ export const Login = async (req, res) => {
     const isProduction = process.env.NODE_ENV === "production";
 
     // Set access token cookie (15 minutes)
-    res.cookie("accessToken", tokens.accessToken, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "None" : "Lax",
-      maxAge: 15 * 60 * 1000,
-    });
+res.cookie("accessToken", tokens.accessToken, {
+  httpOnly: true,
+  secure: false,
+  sameSite: "none",
+  maxAge: 15 * 60 * 1000,
+});
 
-    // Set refresh token cookie (7 days)
-    res.cookie("refreshToken", tokens.refreshToken, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: "Strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+res.cookie("refreshToken", tokens.refreshToken, {
+  httpOnly: true,
+  secure: false,
+  sameSite: "none",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+});
 
-    // Keep old token for backward compatibility
-    res.cookie("token", jwtToken, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "None" : "Lax",
-      maxAge: 1000 * 60 * 60 * 24,
-    });
+res.cookie("token", jwtToken, {
+  httpOnly: true,
+  secure: false,
+  sameSite: "none",
+  maxAge: 1000 * 60 * 60 * 24,
+});
 
     // Build user response
     let userResponse = {
