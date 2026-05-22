@@ -338,27 +338,26 @@ export const Login = async (req, res) => {
 
 export const Logout = async (req, res) => {
   try {
-    const isProduction = process.env.NODE_ENV === "production";
+  const isProduction = process.env.NODE_ENV === "production";
 
-    // Clear all token cookies
-    res.clearCookie("token", {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "None" : "Lax",
-    });
+// Clear all token cookies
+res.clearCookie("token", {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "none" : "lax",
+});
 
-    res.clearCookie("accessToken", {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: "Strict",
-    });
+res.clearCookie("accessToken", {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "none" : "lax",
+});
 
-    res.clearCookie("refreshToken", {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: "Strict",
-    });
-
+res.clearCookie("refreshToken", {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "none" : "lax",
+});
     // Invalidate refresh token in Redis
     if (req.user && req.user.id) {
       await redisService.delete(`refreshToken:${req.user.id}`);
