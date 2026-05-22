@@ -110,20 +110,21 @@ export const AuthMiddleware = (allowedRoles = []) => {
               });
 
               // Update cookies with new tokens
-              const isProduction = process.env.NODE_ENV === "production";
-              res.cookie("accessToken", newTokens.accessToken, {
-                httpOnly: true,
-                secure: isProduction,
-                sameSite: "Strict",
-                maxAge: 15 * 60 * 1000, // 15 minutes
-              });
+const isProduction = process.env.NODE_ENV === "production";
 
-              res.cookie("refreshToken", newTokens.refreshToken, {
-                httpOnly: true,
-                secure: isProduction,
-                sameSite: "Strict",
-                maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-              });
+res.cookie("accessToken", newTokens.accessToken, {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "None" : "Lax",
+  maxAge: 15 * 60 * 1000,
+});
+
+res.cookie("refreshToken", newTokens.refreshToken, {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "None" : "Lax",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+});
 
               // Update Redis with new refresh token
               await redisService.set(
