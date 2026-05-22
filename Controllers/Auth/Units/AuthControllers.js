@@ -481,14 +481,14 @@ export const RefreshToken = async (req, res) => {
     res.cookie("accessToken", newTokens.accessToken, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? "None" : "Lax",
+      sameSite: isProduction ? "none" : "Lax",
       maxAge: 15 * 60 * 1000,
     });
 
     res.cookie("refreshToken", newTokens.refreshToken, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? "None" : "Lax",
+      sameSite: isProduction ? "none" : "Lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
