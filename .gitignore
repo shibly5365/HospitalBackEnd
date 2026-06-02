@@ -5,3 +5,4 @@ node_modules/
 .vscode
 logs/
 .env.local
+.env.production
