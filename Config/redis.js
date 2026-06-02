@@ -18,7 +18,7 @@ export const initializeRedis = async () => {
     });
 
     client.on("error", (err) => {
-      logger.error("Redis connection error:", err);
+      logger.error("❌ Redis connection error:", err);
     });
 
     client.on("connect", () => {
@@ -26,14 +26,17 @@ export const initializeRedis = async () => {
     });
 
     await client.connect();
+
     redisClient = client;
+
     return client;
+
   } catch (error) {
-    logger.warn("⚠️  Redis connection failed (optional):", error.message);
-    logger.warn(
-      "App will work without Redis, but some features will be limited",
-    );
-    return null;
+
+    logger.error("❌ Redis connection failed");
+    logger.error(error);
+
+    process.exit(1); // 🔥 STOP SERVER
   }
 };
 

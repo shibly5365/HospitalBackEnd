@@ -7,6 +7,7 @@ import {
   endConsultation,
   getAllAppointments,
   getAppointmentById,
+  getPendingAppointments,
   getTodaysAppointments,
   getTodaysNextAppointment,
   rescheduleByDoctor,
@@ -145,6 +146,11 @@ DoctorRouting.put(
   AuthMiddleware(["doctor"]),
   updateAppointmentStatus,
 );
+DoctorRouting.get(
+  "/pendingAppointmentsCount",
+  AuthMiddleware(["doctor"]),
+  getPendingAppointments
+);
 DoctorRouting.put(
   "/reschedule",
   AuthMiddleware(["doctor"]),
@@ -177,8 +183,8 @@ DoctorRouting.delete(
 
 DoctorRouting.post("/start", AuthMiddleware(["doctor"]), startConsultation);
 DoctorRouting.post("/end", AuthMiddleware(["doctor"]), endConsultation);
-DoctorRouting.get("/getall", AuthMiddleware(["doctor"]), getAllConsultations);
-DoctorRouting.get("/get/:id", AuthMiddleware(["doctor"]), getConsultationById);
+DoctorRouting.get("/getAllConsultations", AuthMiddleware(["doctor"]), getAllConsultations);
+DoctorRouting.get("/getConsultations/:id", AuthMiddleware(["doctor"]), getConsultationById);
 
 // Creating Priscripton
 

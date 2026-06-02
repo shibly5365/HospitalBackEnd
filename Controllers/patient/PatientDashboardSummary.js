@@ -45,7 +45,7 @@ export const getPatientDashboardSummary = async (req, res) => {
     let patient = await userModel
       .findById(patientId)
       .select(
-        "fullName age gender bloodGroup patientType insuranceInfo emergencyContact contact email address profileImage",
+        "fullName age gender bloodGroup patientType insuranceInfo emergencyContact contact email address profileImage ",
       )
       .lean();
 

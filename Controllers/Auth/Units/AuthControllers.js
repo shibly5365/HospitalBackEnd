@@ -14,6 +14,7 @@ import {
   AuthenticationError,
 } from "../../../Units/ApiError.js";
 import logger from "../../../Config/logger.js";
+import { OAuth2Client } from "google-auth-library";
 
 export const SignUp = async (req, res) => {
   try {
@@ -195,6 +196,9 @@ export const VerifyOtp = async (req, res) => {
 export const Login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log(email);
+    console.log(password);
+    
 
     const errMsg = "Auth failed: Email or Password is wrong";
 
@@ -210,6 +214,8 @@ export const Login = async (req, res) => {
     }
 
     const user = await userModel.findOne({ email });
+    console.log(user);
+    
     if (!user) {
       logger.warn("Login attempt with non-existent email", { email });
       return res.status(403).json({ message: errMsg, success: false });
@@ -328,11 +334,13 @@ export const Login = async (req, res) => {
       user: userResponse,
     });
   } catch (err) {
-    console.error("Login Error:", err.message);
-    return res.status(500).json({
-      message: "Internal login error",
-      success: false,
-    });
+  console.error("FULL LOGIN ERROR:", err);
+
+  return res.status(500).json({
+    message: err.message,
+    stack: err.stack,
+    success: false,
+  });
   }
 };
 
@@ -505,6 +513,67 @@ export const RefreshToken = async (req, res) => {
     return res.status(500).json({
       message: "Token refresh failed",
       success: false,
+    });
+  }
+};
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+export const googleLogin = async (req, res) => {
+  try {
+    const { credential } = req.body;
+
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+
+    const {
+      sub,
+      email,
+      name,
+      picture,
+      email_verified,
+    } = payload;
+
+    let user = await userModel.findOne({ email });
+
+    if (!user) {
+      user = await userModel.create({
+        fullName: name,
+        email,
+        googleId: sub,
+        profileImage: picture,
+        role: "patient",
+        contact: "Not Provided",
+        patientType: "New Patient",
+        isAccountVerified: email_verified,
+      });
+    }
+
+    const jwtToken = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      user,
+      jwtToken,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Google login failed",
     });
   }
 };

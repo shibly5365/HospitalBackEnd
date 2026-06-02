@@ -31,7 +31,10 @@ import {
   patientGetMedicalRecordById,
   patientGetConsultationsByDoctor,
 } from "../../Controllers/patient/MedicalHhistory.js";
-import { patientGetMyPayments } from "../../Controllers/patient/Payments.js";
+import {
+  patientGetMyPayments,
+  patientGetPaymentById,
+} from "../../Controllers/patient/Payments.js";
 
 import {
   patientGetAllPrescriptions,
@@ -63,6 +66,11 @@ import {
 } from "../../Controllers/Messages/videoCallController.js";
 import rateLimiterService from "../../Units/rateLimiterService.js";
 import { asyncHandler } from "../../Units/asyncHandler.js";
+import {
+  demoPaymentFailed,
+  demoPaymentSuccess,
+  verifyRazorpayPayment,
+} from "../../Controllers/Razorpay/verifyRazorpayPayment.js";
 
 const PatientRouting = express.Router();
 
@@ -84,7 +92,12 @@ const checkOtpLimit = asyncHandler(async (req, res, next) => {
 });
 
 /* 🔑 Auth Routes */
-PatientRouting.post("/signup", checkAuthLimit, upload.single("profileImage"), SignUp);
+PatientRouting.post(
+  "/signup",
+  checkAuthLimit,
+  upload.single("profileImage"),
+  SignUp,
+);
 PatientRouting.post("/verify-otp", checkOtpLimit, VerifyOtp);
 PatientRouting.post("/login", checkAuthLimit, LoginValidation, Login);
 PatientRouting.post("/logout", Logout);
@@ -178,11 +191,30 @@ PatientRouting.get(
 );
 
 // payment History
-
+PatientRouting.post(
+  "/verify-payment",
+  AuthMiddleware(["patient"]),
+  verifyRazorpayPayment,
+);
+PatientRouting.put(
+  "/payment-success/:paymentId",
+  AuthMiddleware(["patient"]),
+  demoPaymentSuccess,
+);
+PatientRouting.put(
+  "/payment-failed/:paymentId",
+  AuthMiddleware(["patient"]),
+  demoPaymentFailed,
+);
 PatientRouting.get(
   "/payment",
   AuthMiddleware(["patient"]),
   patientGetMyPayments,
+);
+PatientRouting.get(
+  "/payment/:id",
+  AuthMiddleware(["patient"]),
+  patientGetPaymentById,
 );
 
 // priescriiption

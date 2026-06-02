@@ -56,15 +56,35 @@ const doctorScheduleSchema = new mongoose.Schema(
     slots: [
       {
         start: String,
+
         end: String,
+
         duration: Number,
-        isBooked: { type: Boolean, default: false },
-        onlineFee: { type: Number, default: 100 },
-        offlineFee: { type: Number, default: 80 },
+
+        isBooked: {
+          type: Boolean,
+          default: false,
+        },
+
+        bookingStatus: {
+          type: String,
+          enum: ["Available", "Pending", "Confirmed", "Completed"],
+          default: "Available",
+        },
+
+        onlineFee: {
+          type: Number,
+          default: 100,
+        },
+
+        offlineFee: {
+          type: Number,
+          default: 80,
+        },
       },
     ],
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 doctorScheduleSchema.index({ doctor: 1, date: 1 }, { unique: true });

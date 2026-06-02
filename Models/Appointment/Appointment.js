@@ -12,6 +12,32 @@ const appointmentSchema = new mongoose.Schema(
       ref: "doctors",
       required: true,
     },
+    // ✅ Snapshot Patient Details
+    patientDetails: {
+      fullName: {
+        type: String,
+      },
+
+      gender: {
+        type: String,
+      },
+
+      email: {
+        type: String,
+      },
+
+      phone: {
+        type: String,
+      },
+
+      dob: {
+        type: Date,
+      },
+
+      age: {
+        type: Number,
+      },
+    },
     receptionist: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
     appointmentDate: { type: Date, required: true },
     timeSlot: {

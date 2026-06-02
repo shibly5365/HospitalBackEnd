@@ -4,6 +4,7 @@ import DoctorSchedule from "../../Models/Doctor/ScheduleSchema.js";
 import mongoose from "mongoose";
 import Payment from "../../Models/Payments/paymentSchema.js";
 import userModel from "../../Models/User/UserModels.js";
+import razorpay from "../../Config/Rrazorpay.js";
 
 // ===============================
 // 1️⃣ CREATE APPOINTMENT (PATIENT)
@@ -24,6 +25,13 @@ export const patientCreateAppointment = async (req, res) => {
       consultationType,
       reason,
       paymentMethod,
+
+      patientName,
+      gender,
+      email,
+      phone,
+      dob,
+      age,
     } = req.body;
 
     if (!paymentMethod) {
@@ -79,10 +87,12 @@ export const patientCreateAppointment = async (req, res) => {
           patientType,
 
           patientDetails: {
-            fullName: user.fullName,
-            gender: user.gender,
-            email: user.email,
-            phone: user.contact,
+            fullName: patientName,
+            gender,
+            email,
+            phone,
+            dob,
+            age,
           },
 
           consultationFee: finalFee,
@@ -127,7 +137,43 @@ export const patientCreateAppointment = async (req, res) => {
     );
 
     // 🔗 Link payment to appointment
+    const razorpayOrder = await razorpay.orders.create({
+      amount: finalFee * 100,
+      currency: "INR",
+      receipt: paymentId,
+    });
+
+    // ✅ Save Razorpay Order ID
+    payment[0].razorpayOrderId = razorpayOrder.id;
+
+    await payment[0].save({ session });
+
+    // 🔗 Link payment to appointment
     appointment[0].payments = [payment[0]._id];
+    // ✅ Lock Slot Immediately
+    await DoctorSchedule.updateOne(
+      {
+        doctor: doctorId,
+        date: appointmentDate,
+      },
+      {
+        $set: {
+          "slots.$[elem].isBooked": true,
+
+          "slots.$[elem].bookingStatus": "Pending",
+        },
+      },
+      {
+        arrayFilters: [
+          {
+            "elem.start": timeSlot.start,
+            "elem.end": timeSlot.end,
+          },
+        ],
+        session,
+      },
+    );
+
     await appointment[0].save({ session });
 
     await session.commitTransaction();
@@ -136,8 +182,17 @@ export const patientCreateAppointment = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Appointment & Payment created successfully",
+
       appointment: appointment[0],
+
       payment: payment[0],
+
+      razorpay: {
+        orderId: razorpayOrder.id,
+        amount: razorpayOrder.amount,
+        currency: razorpayOrder.currency,
+        key: process.env.RAZORPAY_KEY_ID,
+      },
     });
   } catch (error) {
     await session.abortTransaction();
@@ -316,7 +371,11 @@ export const patientCancelAppointment = async (req, res) => {
         date: scheduleDate,
       },
       {
-        $set: { "slots.$[elem].isBooked": false },
+        $set: {
+          "slots.$[elem].isBooked": false,
+
+          "slots.$[elem].bookingStatus": "Available",
+        },
       },
       {
         arrayFilters: [

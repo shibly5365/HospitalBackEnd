@@ -8,7 +8,10 @@ import http from "http";
 // 🔧 NEW: Infrastructure imports
 import logger, { logAuthEvent } from "./Config/logger.js";
 import { initializeRedis } from "./Config/redis.js";
-import { requestLoggingMiddleware, globalErrorHandler } from "./Middleware/errorHandler.js";
+import {
+  requestLoggingMiddleware,
+  globalErrorHandler,
+} from "./Middleware/errorHandler.js";
 
 import routing from "./Routing/auth/AuthRotuing.js";
 import PatientRouting from "./Routing/Patient/Patient.js";
@@ -33,16 +36,17 @@ const requiredEnvVars = [
 requiredEnvVars.forEach((envVar) => {
   if (!process.env[envVar]) {
     console.error(`❌ Missing required environment variable: ${envVar}`);
-    process.exit(1);
+    process.exit(1); 
   }
 });
 
 const app = express();
 
-//CORS configuration - 🔒 Hardened security
+// CORS configuration - 🔒 Hardened security
 const FRONTEND_URL = process.env.FRONTEND_URL;
 
 app.use(
+
   cors({
     origin: FRONTEND_URL,
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -52,12 +56,17 @@ app.use(
   }),
 );
 
+
+
 // 🔒 Security headers
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("X-XSS-Protection", "1; mode=block");
-  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader(
+    "Strict-Transport-Security",
+    "max-age=31536000; includeSubDomains",
+  );
   next();
 });
 
@@ -117,7 +126,7 @@ app.use(globalErrorHandler);
 // ✅ Start Server
 const PORT = process.env.PORT || 4002;
 
-server.listen(PORT,"0.0.0.0", () => {
+server.listen(PORT, () => {
   logger.info(`✅ Server running on port ${PORT}`);
   logger.info(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
   console.log(`✅ Server running on port ${PORT}`);

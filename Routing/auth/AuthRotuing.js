@@ -10,6 +10,7 @@ import {
   Logout,
   updateProfile,
   RefreshToken,
+  googleLogin,
 } from "../../Controllers/Auth/Units/AuthControllers.js";
 import { AuthMiddleware } from "../../Middleware/AuthMiddleware.js";
 import { upload } from "../../Config/multer.js";
@@ -46,6 +47,7 @@ const checkPasswordResetLimit = asyncHandler(async (req, res, next) => {
 routing.post("/login", checkAuthLimit, LoginValidation, Login);
 routing.post("/logout", Logout);
 routing.post("/refresh-token", RefreshToken);
+routing.post("/google-login", googleLogin);
 routing.get("/me", AuthMiddleware(["admin", "patient", "doctor","receptionist"]), getMe);
 routing.put(
   "/update-profile",
