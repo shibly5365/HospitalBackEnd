@@ -76,15 +76,17 @@ const PatientRouting = express.Router();
 
 // Rate limiting middleware for auth endpoints
 const checkAuthLimit = asyncHandler(async (req, res, next) => {
-  const email = req.body.email;
+  const email = req.body?.email;
+
   if (email) {
     await rateLimiterService.checkAuthLimit(email);
   }
+
   next();
 });
 
 const checkOtpLimit = asyncHandler(async (req, res, next) => {
-  const email = req.body.email;
+  const email = req.body?.email;
   if (email) {
     await rateLimiterService.checkOtpLimit(email);
   }

@@ -37,19 +37,13 @@ export const SignUp = async (req, res) => {
     }
 
     // Validate password strength
-    const passwordSchema = Joi.string()
-      .min(12)
-      .pattern(/[A-Z]/, "uppercase")
-      .pattern(/[a-z]/, "lowercase")
-      .pattern(/[0-9]/, "number")
-      .pattern(/[!@#$%^&*(),.?":{}|<>]/, "special character")
-      .required();
+    const passwordSchema = Joi.string().min(8).required();
 
     const { error } = passwordSchema.validate(password);
     if (error) {
       logger.warn("Weak password attempt", { email });
       return res.status(400).json({
-        message: `Password must have: min 12 chars, uppercase, lowercase, number, special character`,
+        message: `Password must have: min 8 chars, `,
         success: false,
       });
     }
@@ -198,7 +192,6 @@ export const Login = async (req, res) => {
     const { email, password } = req.body;
     console.log(email);
     console.log(password);
-    
 
     const errMsg = "Auth failed: Email or Password is wrong";
 
@@ -215,7 +208,7 @@ export const Login = async (req, res) => {
 
     const user = await userModel.findOne({ email });
     console.log(user);
-    
+
     if (!user) {
       logger.warn("Login attempt with non-existent email", { email });
       return res.status(403).json({ message: errMsg, success: false });
@@ -334,13 +327,13 @@ export const Login = async (req, res) => {
       user: userResponse,
     });
   } catch (err) {
-  console.error("FULL LOGIN ERROR:", err);
+    console.error("FULL LOGIN ERROR:", err);
 
-  return res.status(500).json({
-    message: err.message,
-    stack: err.stack,
-    success: false,
-  });
+    return res.status(500).json({
+      message: err.message,
+      stack: err.stack,
+      success: false,
+    });
   }
 };
 
@@ -529,13 +522,7 @@ export const googleLogin = async (req, res) => {
 
     const payload = ticket.getPayload();
 
-    const {
-      sub,
-      email,
-      name,
-      picture,
-      email_verified,
-    } = payload;
+    const { sub, email, name, picture, email_verified } = payload;
 
     let user = await userModel.findOne({ email });
 
@@ -560,7 +547,7 @@ export const googleLogin = async (req, res) => {
       process.env.JWT_SECRET,
       {
         expiresIn: "7d",
-      }
+      },
     );
 
     return res.status(200).json({

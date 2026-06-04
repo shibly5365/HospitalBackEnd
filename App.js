@@ -36,27 +36,30 @@ const requiredEnvVars = [
 requiredEnvVars.forEach((envVar) => {
   if (!process.env[envVar]) {
     console.error(`❌ Missing required environment variable: ${envVar}`);
-    process.exit(1); 
+    process.exit(1);
   }
 });
 
 const app = express();
 
 // CORS configuration - 🔒 Hardened security
-const FRONTEND_URL = process.env.FRONTEND_URL;
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://hospital-front-end-delta.vercel.app",
+];
 
 app.use(
-
   cors({
-    origin: FRONTEND_URL,
-    allowedHeaders: ["Content-Type", "Authorization"],
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
-    methods: ["GET", "POST", "PUT","PATCH", "DELETE", "OPTIONS"],
-    maxAge: 600, // 10 minutes
   }),
 );
-
-
 
 // 🔒 Security headers
 app.use((req, res, next) => {
