@@ -1,68 +1,62 @@
-import redis from "redis";
+import { createClient } from "redis";
 import logger from "./logger.js";
 
 let redisClient = null;
 
-/**
- * Initialize Redis connection
- * Safe for optional use - app works without Redis during development
- */
 export const initializeRedis = async () => {
+  if (!process.env.REDIS_URL) {
+    logger.warn("Redis URL missing; continuing without Redis");
+    return null;
+  }
+
   try {
-    const client = redis.createClient({
+    // Log only the hostname, never the credentials.
+    logger.info(
+      `Connecting to Redis host: ${
+        new URL(process.env.REDIS_URL).hostname
+      }`
+    );
+
+    const client = createClient({
       url: process.env.REDIS_URL,
       socket: {
-        tls: true,
-        rejectUnauthorized: false,
+        reconnectStrategy: (retries) => {
+          if (retries > 5) {
+            return new Error("Redis reconnection limit reached");
+          }
+
+          return Math.min(retries * 250, 2000);
+        },
       },
     });
 
-    client.on("error", (err) => {
-      logger.error("❌ Redis connection error:", err);
+    client.on("error", (error) => {
+      logger.error("Redis connection error:", error.message);
     });
 
-    client.on("connect", () => {
-      logger.info("✅ Redis connected successfully");
+    client.on("ready", () => {
+      logger.info("Redis connected successfully");
     });
 
     await client.connect();
 
     redisClient = client;
-
     return client;
-
   } catch (error) {
-
-    logger.error("❌ Redis connection failed");
-    logger.error(error);
-
-    process.exit(1); // 🔥 STOP SERVER
+    logger.error("Redis initialization failed:", error.message);
+    return null;
   }
 };
 
-/**
- * Get Redis client instance
- * Returns null if Redis not available
- */
-export const getRedisClient = () => {
-  return redisClient;
-};
+export const getRedisClient = () => redisClient;
 
-/**
- * Check if Redis is available
- */
-export const isRedisAvailable = () => {
-  return redisClient !== null;
-};
+export const isRedisAvailable = () =>
+  redisClient?.isReady === true;
 
-/**
- * Close Redis connection
- */
 export const closeRedis = async () => {
-  if (redisClient) {
+  if (redisClient?.isOpen) {
     await redisClient.quit();
+    redisClient = null;
     logger.info("Redis connection closed");
   }
 };
-
-export default redisClient;
