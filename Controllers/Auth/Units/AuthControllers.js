@@ -16,6 +16,8 @@ import {
 import logger from "../../../Config/logger.js";
 import { OAuth2Client } from "google-auth-library";
 
+
+
 export const SignUp = async (req, res) => {
   try {
     const {
@@ -28,7 +30,21 @@ export const SignUp = async (req, res) => {
       role = "patient",
     } = req.body;
 
-    const existingUser = await userModel.findOne({ email });
+    // Validate required fields
+    if (!fullName?.trim() || !email?.trim() || !password) {
+      return res.status(400).json({
+        message: "Full name, email, and password are required",
+        success: false,
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Check if the user already exists
+    const existingUser = await userModel.findOne({
+      email: normalizedEmail,
+    });
+
     if (existingUser) {
       return res.status(400).json({
         message: "User already exists",
@@ -36,43 +52,43 @@ export const SignUp = async (req, res) => {
       });
     }
 
-    // Validate password strength
-    const passwordSchema = Joi.string().min(8).required();
+    // Validate password
+    const { error } = Joi.string()
+      .min(8)
+      .required()
+      .validate(password);
 
-    const { error } = passwordSchema.validate(password);
     if (error) {
-      logger.warn("Weak password attempt", { email });
       return res.status(400).json({
-        message: `Password must have: min 8 chars, `,
+        message: "Password must be at least 8 characters",
         success: false,
       });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const verifyOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    const verifyOtpExpireAt = Date.now() + 15 * 60 * 1000;
-
     let profileImage = "";
+
     if (req.file) {
-      try {
-        const result = await uploadToCloudinary(req.file.buffer, "patients");
-        profileImage = result.secure_url;
-      } catch (err) {
-        console.error("CLOUDINARY ERROR:", err);
-        throw err;
-      }
+      const result = await uploadToCloudinary(
+        req.file.buffer,
+        "patients"
+      );
+
+      profileImage = result.secure_url;
     }
 
-    // 🔥 STORE TEMP DATA (NOT DB)
+    // Patient signup requires OTP verification
     if (role === "patient") {
-      const verifyOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      const verifyOtp = Math.floor(
+        100000 + Math.random() * 900000
+      ).toString();
+
       const verifyOtpExpireAt = Date.now() + 15 * 60 * 1000;
 
-      // Store OTP in Redis (expires after 15 minutes)
       const otpData = {
-        fullName,
-        email,
+        fullName: fullName.trim(),
+        email: normalizedEmail,
         password: hashedPassword,
         contact,
         age,
@@ -82,21 +98,60 @@ export const SignUp = async (req, res) => {
         verifyOtp,
         verifyOtpExpireAt,
       };
-      await redisService.set(`signup:${email}`, otpData, 15 * 60);
 
-      await sendOtpEmail(email, verifyOtp);
+      const key = `signup:${normalizedEmail}`;
+
+      // Save pending signup to Redis for 15 minutes
+      const saved = await redisService.set(
+        key,
+        otpData,
+        15 * 60
+      );
+
+      if (!saved) {
+        logger.error("Failed to save pending signup in Redis", {
+          email: normalizedEmail,
+        });
+
+        return res.status(503).json({
+          message:
+            "Signup service is unavailable. Please try again later.",
+          success: false,
+        });
+      }
+
+      // Send OTP only after Redis save succeeds
+      try {
+        await sendOtpEmail(normalizedEmail, verifyOtp);
+      } catch (emailError) {
+        await redisService.delete(key);
+
+        logger.error("Failed to send signup OTP", {
+          email: normalizedEmail,
+          error: emailError.message,
+        });
+
+        return res.status(500).json({
+          message: "Unable to send OTP. Please try again.",
+          success: false,
+        });
+      }
+
+      logger.info("Pending signup saved in Redis", {
+        email: normalizedEmail,
+      });
 
       return res.status(200).json({
         message: "OTP sent. Verify to complete signup.",
         success: true,
-        email,
+        email: normalizedEmail,
       });
     }
 
-    // ✅ 🔥 OTHER ROLES → DIRECT REGISTER
+    // Other roles: preserve your original direct-registration flow
     const newUser = new userModel({
-      fullName,
-      email,
+      fullName: fullName.trim(),
+      email: normalizedEmail,
       password: hashedPassword,
       contact,
       age,
@@ -108,7 +163,7 @@ export const SignUp = async (req, res) => {
 
     await newUser.save();
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Account created successfully",
       success: true,
     });
@@ -117,61 +172,112 @@ export const SignUp = async (req, res) => {
       error: error.message,
       email: req.body.email,
     });
-    res.status(500).json({
+
+    return res.status(500).json({
       message: "Signup failed",
       success: false,
     });
   }
 };
+
+
 export const VerifyOtp = async (req, res) => {
   try {
-    const { email, otp } = req.body;
+    const normalizedEmail = req.body.email
+      ?.trim()
+      .toLowerCase();
 
-    const tempUser = await redisService.get(`signup:${email}`);
+    const otp = String(req.body.otp ?? "").trim();
 
-    if (!tempUser) {
+    if (!normalizedEmail || !otp) {
       return res.status(400).json({
-        message: "No signup request found",
+        message: "Email and OTP are required",
         success: false,
       });
     }
 
-    if (tempUser.verifyOtp !== otp) {
+    if (!/^\d{6}$/.test(otp)) {
+      return res.status(400).json({
+        message: "Please enter a valid 6-digit OTP",
+        success: false,
+      });
+    }
+
+    const key = `signup:${normalizedEmail}`;
+
+    // Retrieve pending signup from the same Redis key
+    const tempUser = await redisService.get(key);
+
+    if (!tempUser) {
+      logger.warn("Pending signup not found in Redis", {
+        email: normalizedEmail,
+      });
+
+      return res.status(400).json({
+        message: "No signup request found. Please sign up again.",
+        success: false,
+      });
+    }
+
+    // Check OTP
+    if (String(tempUser.verifyOtp) !== otp) {
       return res.status(400).json({
         message: "Invalid OTP",
         success: false,
       });
     }
 
-    if (tempUser.verifyOtpExpireAt < Date.now()) {
+    // Check OTP expiration
+    if (
+      !tempUser.verifyOtpExpireAt ||
+      Number(tempUser.verifyOtpExpireAt) < Date.now()
+    ) {
+      await redisService.delete(key);
+
       return res.status(400).json({
-        message: "OTP expired",
+        message: "OTP expired. Please sign up again.",
         success: false,
       });
     }
 
-    logger.info("User verified OTP", { email });
+    // Prevent duplicate account creation
+    const existingUser = await userModel.findOne({
+      email: normalizedEmail,
+    });
 
-    // ✅ NOW SAVE TO DB
+    if (existingUser) {
+      await redisService.delete(key);
+
+      return res.status(400).json({
+        message: "User already exists. Please log in.",
+        success: false,
+      });
+    }
+
+    // Create the verified patient account
     const newUser = new userModel({
       fullName: tempUser.fullName,
-      email: tempUser.email,
+      email: normalizedEmail,
       password: tempUser.password,
       contact: tempUser.contact,
       age: tempUser.age,
       gender: tempUser.gender,
       profileImage: tempUser.profileImage,
-      role: tempUser.role, // 🔥 dynamic
+      role: tempUser.role,
       patientType: "New Patient",
       isAccountVerified: true,
     });
 
     await newUser.save();
 
-    // 🔥 CLEANUP
-    await redisService.delete(`signup:${email}`);
+    // Remove pending signup after successful account creation
+    await redisService.delete(key);
 
-    res.status(201).json({
+    logger.info("User verified OTP and account created", {
+      email: normalizedEmail,
+    });
+
+    return res.status(201).json({
       message: "Account created successfully",
       success: true,
     });
@@ -180,12 +286,14 @@ export const VerifyOtp = async (req, res) => {
       error: error.message,
       email: req.body.email,
     });
-    res.status(500).json({
+
+    return res.status(500).json({
       message: "Verification failed",
       success: false,
     });
   }
 };
+
 
 export const Login = async (req, res) => {
   try {

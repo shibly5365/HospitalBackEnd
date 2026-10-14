@@ -1,27 +1,53 @@
+
 import mongoose from "mongoose";
 
 const departmentSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, unique: true, trim: true },
-    description: { type: String },
+    name: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+    },
+
+    description: {
+      type: String,
+    },
+
+    departmentImage: {
+      type: String,
+      default: "",
+    },
 
     treatments: [
       {
-        title: { type: String, required: true },
-        description: { type: String },
+        title: {
+          type: String,
+          required: true,
+        },
+        description: {
+          type: String,
+        },
       },
     ],
 
     headOfDepartment: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "users",
+      default: null,
     },
-    image: { type: String },
 
-    doctorsCount: { type: Number, default: 0 },
+    doctorsCount: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );
 
-const DepartmentModle = mongoose.model("department", departmentSchema);
+const DepartmentModle = mongoose.model(
+  "department",
+  departmentSchema
+);
+
 export default DepartmentModle;

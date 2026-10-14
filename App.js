@@ -22,8 +22,9 @@ import ReceptionistRouting from "./Routing/Receptionist/ReceptionistRouting.js";
 import VideoCallRouting from "./Routing/VideoCall/VideoCallRouting.js";
 import { initSocket } from "./Sockets/socketServer.js";
 import MessageRouter from "./Routing/messages/messages.js";
-
-dotenv.config();
+dotenv.config({
+  path: process.env.NODE_ENV === "production" ? ".env.production" : ".env",
+});
 
 // ✅ Validate required environment variables
 const requiredEnvVars = [
@@ -130,10 +131,8 @@ app.use(globalErrorHandler);
 const PORT = process.env.PORT || 4002;
 
 server.listen(PORT, () => {
-  logger.info(`✅ Server running on port ${PORT}`);
-  logger.info(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
 });
 
 // Better error handling for common server startup issues

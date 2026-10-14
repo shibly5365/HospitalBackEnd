@@ -5,45 +5,65 @@ import userModel from "../../Models/User/UserModels.js";
 import { uploadToCloudinary } from "../../Units/uploadToCloudinary.js";
 
 // 🟢 Create Department with Cloudinary Image
+
 export const createDepartment = async (req, res) => {
   try {
     let imageUrl = "";
 
+    console.log("Request body:", req.body);
+    console.log("Uploaded file:", req.file?.originalname);
+
     if (req.file) {
-      const result = await uploadToCloudinary(req.file.buffer, "departments");
+      const result = await uploadToCloudinary(
+        req.file.buffer,
+        "departments"
+      );
+
       imageUrl = result.secure_url;
+    } else if (req.body.departmentImage) {
+      imageUrl = req.body.departmentImage;
     }
 
-    let head = null;
+    let treatments = [];
 
-    // ✅ If head provided
-    if (req.body.headOfDepartment) {
-      const doctor = await doctorModel.findOne({
-        userId: req.body.headOfDepartment,
-      });
+    if (req.body.treatments) {
+      treatments =
+        typeof req.body.treatments === "string"
+          ? JSON.parse(req.body.treatments)
+          : req.body.treatments;
 
-      if (!doctor) {
+      if (!Array.isArray(treatments)) {
         return res.status(400).json({
           success: false,
-          message: "Head must be a valid doctor",
+          message: "Treatments must be an array",
         });
       }
-
-      head = req.body.headOfDepartment;
     }
 
     const department = await DepartmentModle.create({
       name: req.body.name,
       description: req.body.description,
-      headOfDepartment: head,
       departmentImage: imageUrl,
+      treatments,
+      headOfDepartment: null,
     });
 
-    res.status(201).json({ success: true, data: department });
+    console.log("Saved image URL:", department.departmentImage);
+
+    return res.status(201).json({
+      success: true,
+      data: department,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("CREATE DEPARTMENT ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
+
 
 // 🟢 Get All Departments
 export const getDepartments = async (req, res) => {
